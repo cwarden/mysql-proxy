@@ -16,6 +16,12 @@
 
  $%ENDLICENSE%$ */
 #include <sys/types.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+
+#include <glib.h>
+#include <glib/gstdio.h>
 
 /**
  * replication 
@@ -66,6 +72,75 @@ void network_mysqld_binlog_free(network_mysqld_binlog *binlog) {
 	g_hash_table_destroy(binlog->rbr_tables);
 
 	g_free(binlog);
+}
+
+int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename) {
+	char binlog_header[4];
+
+	if (-1 == (binlog->fd = g_open(filename, O_RDONLY, 0))) {
+		g_critical("%s: opening '%s' failed: %s",
+				G_STRLOC,
+				filename,
+				g_strerror(errno));
+		return -1;
+	}
+
+	if (4 != read(binlog->fd, binlog_header, 4)) {
+		g_return_val_if_reached(-1);
+	}
+
+	if (binlog_header[0] != '\xfe' ||
+	    binlog_header[1] != 'b' ||
+	    binlog_header[2] != 'i' ||
+	    binlog_header[3] != 'n') {
+
+		g_critical("%s: binlog-header should be: %02x%02x%02x%02x, got %02x%02x%02x%02x",
+				G_STRLOC,
+				'\xfe', 'b', 'i', 'n',
+				binlog_header[0],
+				binlog_header[1],
+				binlog_header[2],
+				binlog_header[3]
+				);
+
+		g_return_val_if_reached(-1);
+	}
+
+	return 0;
+}
+
+int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, network_packet *packet) {
+	if (19 == (packet->data->len = read(binlog->fd, packet->data->str, 19))) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+int network_mysqld_binlog_read_event(network_mysqld_binlog *binlog, 
+		network_packet *packet,
+		goffset event_size) {
+	gssize len;
+
+	g_string_set_size(packet->data, event_size); /* resize the string */
+	packet->data->len = 19;
+
+	len = read(binlog->fd, packet->data->str + 19, event_size - 19);
+
+	if (-1 == len) {
+		g_critical("%s: read(..., %d, ...) failed: %s",
+				G_STRLOC,
+				event_size - 19,
+				g_strerror(errno));
+		return -1;
+	}
+	g_assert_cmpint(len, ==, event_size - 19); /* read error */
+
+	g_assert_cmpint(packet->data->len, ==, 19);
+	packet->data->len += len;
+	g_assert_cmpint(packet->data->len, ==, event_size);
+
+	return 0;
 }
 
 network_mysqld_binlog_event *network_mysqld_binlog_event_new() {
@@ -387,8 +462,9 @@ struct {
 	{ 0, NULL }
 };
 
-const char *network_mysqld_binlog_get_eventname(enum Log_event_type type) {
+const char *network_mysqld_binlog_event_get_name(network_mysqld_binlog_event *event) {
 	static const char *unknown_type = "UNKNOWN";
+	enum Log_event_type type = event->event_type;
 	guint i;
 
 	for (i = 0; event_type_name[i].name; i++) {

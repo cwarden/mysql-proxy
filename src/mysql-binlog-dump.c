@@ -425,8 +425,6 @@ int replicate_binlog_dump_file(
 		gint startpos,
 		gboolean find_startpos
 		) {
-	int fd;
-	char binlog_header[4];
 	network_packet *packet;
 	network_mysqld_binlog *binlog;
 	network_mysqld_binlog_event *event;
@@ -434,44 +432,19 @@ int replicate_binlog_dump_file(
 	int round = 0;
 	int ret = 0;
 
-	if (-1 == (fd = g_open(filename, O_RDONLY, 0))) {
-		g_critical("%s: opening '%s' failed: %s",
-				G_STRLOC,
-				filename,
-				g_strerror(errno));
+	binlog = network_mysqld_binlog_new();
+	if (network_mysqld_binlog_open(binlog, filename)) {
 		return -1;
-	}
-
-	if (4 != read(fd, binlog_header, 4)) {
-		g_return_val_if_reached(-1);
-	}
-
-	if (binlog_header[0] != '\xfe' ||
-	    binlog_header[1] != 'b' ||
-	    binlog_header[2] != 'i' ||
-	    binlog_header[3] != 'n') {
-
-		g_critical("%s: binlog-header should be: %02x%02x%02x%02x, got %02x%02x%02x%02x",
-				G_STRLOC,
-				'\xfe', 'b', 'i', 'n',
-				binlog_header[0],
-				binlog_header[1],
-				binlog_header[2],
-				binlog_header[3]
-				);
-
-		g_return_val_if_reached(-1);
 	}
 
 	packet = network_packet_new();
 	packet->data = g_string_new(NULL);
 	g_string_set_size(packet->data, 19 + 1);
 
-	binlog = network_mysqld_binlog_new();
 	binlog_pos = 4;
 
 	if (startpos) {
-		if (-1 == lseek(fd, startpos, SEEK_SET)) {
+		if (-1 == lseek(binlog->fd, startpos, SEEK_SET)) {
 			g_critical("%s: lseek(%d) failed: %s", 
 					G_STRLOC,
 					startpos,
@@ -488,7 +461,7 @@ int replicate_binlog_dump_file(
 		 *
 		 * if not, just skip a byte a retry until we found a valid header
 		 * */
-		while (19 == (packet->data->len = read(fd, packet->data->str, 19))) {
+		while (0 == network_mysqld_binlog_read_event_header(binlog, packet)) {
 			packet->data->str[packet->data->len] = '\0'; /* term the string */
 			packet->offset = 0;
 
@@ -499,7 +472,7 @@ int replicate_binlog_dump_file(
 
 			if (event->event_size < 19 ||
 			    binlog_pos + event->event_size != event->log_pos) {
-				if (-1 == lseek(fd, -18, SEEK_CUR)) {
+				if (-1 == lseek(binlog->fd, -18, SEEK_CUR)) {
 					g_critical("%s: lseek(%d) failed: %s", 
 							G_STRLOC,
 							-18,
@@ -516,7 +489,7 @@ int replicate_binlog_dump_file(
 						round++
 						);
 			} else {
-				if (-1 == lseek(fd, -19, SEEK_CUR)) {
+				if (-1 == lseek(binlog->fd, -19, SEEK_CUR)) {
 					g_critical("%s: lseek(%d) failed: %s", 
 							G_STRLOC,
 							-18,
@@ -536,8 +509,7 @@ int replicate_binlog_dump_file(
 	packet->offset = 0;
 
 	/* next are the events, without the mysql packet header */
-	while (19 == (packet->data->len = read(fd, packet->data->str, 19))) {
-		gssize len;
+	while (network_mysqld_binlog_read_event_header(binlog, packet)) {
 		packet->data->str[packet->data->len] = '\0'; /* term the string */
 
 		g_assert_cmpint(packet->data->len, ==, 19);
@@ -559,29 +531,13 @@ int replicate_binlog_dump_file(
 				G_STRLOC,
 				binlog_pos,
 				event->log_pos,
-				network_mysqld_binlog_get_eventname(event->event_type),
+				network_mysqld_binlog_event_get_name(event),
 				event->event_type
 				);
 	
 		binlog_pos += 19;
 
-		g_string_set_size(packet->data, event->event_size); /* resize the string */
-		packet->data->len = 19;
-
-		len = read(fd, packet->data->str + 19, event->event_size - 19);
-
-		if (-1 == len) {
-			g_critical("%s: lseek(..., %d, ...) failed: %s",
-					G_STRLOC,
-					event->event_size - 19,
-					g_strerror(errno));
-			return -1;
-		}
-		g_assert_cmpint(len, ==, event->event_size - 19); /* read error */
-
-		g_assert_cmpint(packet->data->len, ==, 19);
-		packet->data->len += len;
-		g_assert_cmpint(packet->data->len, ==, event->event_size);
+		network_mysqld_binlog_read_event(binlog, packet, event->event_size);
 		
 		if (network_mysqld_proto_get_binlog_event(packet, binlog, event)) {
 			g_debug_hexdump(G_STRLOC, packet->data->str + 19, packet->data->len - 19);
@@ -590,17 +546,15 @@ int replicate_binlog_dump_file(
 			/* ignore it */
 		}
 	
+		binlog_pos += event->event_size;
 		network_mysqld_binlog_event_free(event);
 
 		packet->offset = 0;
-		binlog_pos += len;
 	}
 	g_string_free(packet->data, TRUE);
 	network_packet_free(packet);
 
 	network_mysqld_binlog_free(binlog);
-
-	close(fd);
 
 	return ret;
 }
