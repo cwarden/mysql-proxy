@@ -5,6 +5,7 @@ TESTS=proxy-test.lua \
       proxy-tokenizer.lua \
       proxy-parser.lua \
       mysql-proto.lua \
+      mysql-table.lua \
       chassis.lua
 
 TESTS_ENVIRONMENT = \
