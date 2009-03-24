@@ -23,6 +23,17 @@ for event in f:next() do
 	assert(event.timestamp)
 	assert(event.server_id)
 	assert(event.type)
+	assert(event.log_pos)
+	assert(event.flags)
+	assert(event.event_size)
 
-	print(("%d, %d, %s"):format(event.timestamp, event.server_id, event.type))
+	-- print(("%d, %d, %s"):format(event.timestamp, event.server_id, event.type))
+
+	-- try to decode the event 
+	if event.type == "QUERY_EVENT" then
+		assert(event.query.thread_id)
+		assert(event.query.query)
+		-- print(("%d: %s"):format(event.query.thread_id, event.query.query))
+	end
 end
+

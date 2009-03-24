@@ -59,6 +59,44 @@
 		return 1; \
 	}
 
+static int lua_mysqld_binlog_query_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.query_event)), thread_id);
+	LUA_UDATA_EXPORT_CSTR((&(event->event.query_event)), db_name);
+	LUA_UDATA_EXPORT_CSTR((&(event->event.query_event)), query);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_query_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_query_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_query_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_query_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+
 static int lua_mysqld_binlog_event_get(lua_State *L) {
 	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
 	gsize keysize = 0;
@@ -66,10 +104,17 @@ static int lua_mysqld_binlog_event_get(lua_State *L) {
 
 	LUA_UDATA_EXPORT_INT(event, timestamp);
 	LUA_UDATA_EXPORT_INT(event, server_id);
+	LUA_UDATA_EXPORT_INT(event, log_pos);
+	LUA_UDATA_EXPORT_INT(event, flags);
+	LUA_UDATA_EXPORT_INT(event, event_size);
 
 	if (strleq(C("type"), key, keysize)) {
 		lua_pushstring(L, network_mysqld_binlog_event_get_name(event));
 		return 1;
+	}
+
+	if (strleq(C("query"), key, keysize)) {
+		return lua_mysqld_binlog_query_event_push(L, event);
 	}
 
 	return 0;
