@@ -413,7 +413,10 @@ static int lua_mysqld_binlog_open (lua_State *L) {
 	udata = network_mysqld_binlog_new();
 
 	if (network_mysqld_binlog_open(udata, filename)) {
-		return 0;
+		lua_pushnil(L);
+		lua_pushstring(L, "opening file failed");
+		
+		return 2;
 	}
 
 	return lua_mysqld_binlog_push(L, udata);
