@@ -29,6 +29,7 @@ typedef MYSQL_FIELD network_mysqld_column;
 
 network_mysqld_column *network_mysqld_column_new();
 void network_mysqld_column_free(network_mysqld_column *column);
+const char *network_mysqld_column_get_typestring(network_mysqld_column *column);
 
 typedef GPtrArray network_mysqld_columns;
 

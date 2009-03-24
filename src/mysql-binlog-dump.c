@@ -38,96 +38,6 @@
 
 #define S(x) x->str, x->len
 
-struct {
-	enum Log_event_type type;
-	const char *name;
-} event_type_name[] = {
-#define V(x) x, #x
-	{ V(UNKNOWN_EVENT) },
-	{ V(START_EVENT_V3) },
-	{ V(QUERY_EVENT) },
-	{ V(STOP_EVENT) },
-	{ V(ROTATE_EVENT) },
-	{ V(INTVAR_EVENT) },
-	{ V(LOAD_EVENT) },
-	{ V(SLAVE_EVENT) },
-	{ V(CREATE_FILE_EVENT) },
-	{ V(APPEND_BLOCK_EVENT) },
-	{ V(EXEC_LOAD_EVENT) },
-	{ V(DELETE_FILE_EVENT) },
-	{ V(NEW_LOAD_EVENT) },
-	{ V(RAND_EVENT) },
-	{ V(USER_VAR_EVENT) },
-	{ V(FORMAT_DESCRIPTION_EVENT) },
-	{ V(XID_EVENT) },
-	{ V(BEGIN_LOAD_QUERY_EVENT) },
-	{ V(EXECUTE_LOAD_QUERY_EVENT) },
-	{ V(TABLE_MAP_EVENT ) },
-	{ V(PRE_GA_WRITE_ROWS_EVENT ) },
-	{ V(PRE_GA_UPDATE_ROWS_EVENT ) },
-	{ V(PRE_GA_DELETE_ROWS_EVENT ) },
-	{ V(WRITE_ROWS_EVENT ) },
-	{ V(UPDATE_ROWS_EVENT ) },
-	{ V(DELETE_ROWS_EVENT ) },
-	{ V(INCIDENT_EVENT) },
-
-#undef V
-	{ 0, NULL }
-};
-
-const char *network_mysqld_binlog_get_eventname(enum Log_event_type type) {
-	static const char *unknown_type = "UNKNOWN";
-	guint i;
-
-	for (i = 0; event_type_name[i].name; i++) {
-		if ((guchar)event_type_name[i].type == (guchar)type) return event_type_name[i].name;
-	}
-
-	g_critical("%s: event-type %d isn't known yet", 
-			G_STRLOC,
-			type);
-
-	return unknown_type;
-}
-
-struct {
-	enum enum_field_types type;
-	const char *name;
-} field_type_name[] = {
-	{ MYSQL_TYPE_STRING, "CHAR" },
-	{ MYSQL_TYPE_VARCHAR, "VARCHAR" },
-	{ MYSQL_TYPE_BLOB, "BLOB" },
-
-	{ MYSQL_TYPE_TINY, "TINYINT" },
-	{ MYSQL_TYPE_SHORT, "SMALLINT" },
-	{ MYSQL_TYPE_INT24, "MEDIUMINT" },
-	{ MYSQL_TYPE_LONG, "INT" },
-	{ MYSQL_TYPE_NEWDECIMAL, "DECIMAL" },
-
-	{ MYSQL_TYPE_ENUM, "ENUM" },
-
-	{ MYSQL_TYPE_TIMESTAMP, "TIMESTAMP" },
-	{ MYSQL_TYPE_DATE, "DATE" },
-	{ MYSQL_TYPE_DATETIME, "DATETIME" },
-
-	{ 0, NULL }
-};
-
-const char *network_mysqld_proto_field_get_typestring(enum enum_field_types type) {
-	static const char *unknown_type = "UNKNOWN";
-	guint i;
-
-	for (i = 0; field_type_name[i].name; i++) {
-		if ((guchar)field_type_name[i].type == (guchar)type) return field_type_name[i].name;
-	}
-
-	g_critical("%s: field-type %d isn't known yet", 
-			G_STRLOC,
-			type);
-
-	return unknown_type;
-}
-
 void network_mysqld_table_print(network_mysqld_table *tbl) {
 	GString *out = g_string_new(NULL);
 	guint i;
@@ -150,7 +60,7 @@ void network_mysqld_table_print(network_mysqld_table *tbl) {
 		case MYSQL_TYPE_LONG:
 			g_string_append_printf(out, "  field_%d %s %s NULL",
 					i,
-					network_mysqld_proto_field_get_typestring(field->type),
+					network_mysqld_column_get_typestring(field),
 					field->flags & NOT_NULL_FLAG ? "NOT" : "DEFAULT"
 				 );
 			break;
@@ -158,7 +68,7 @@ void network_mysqld_table_print(network_mysqld_table *tbl) {
 		case MYSQL_TYPE_NEWDECIMAL:
 			g_string_append_printf(out, "  field_%d %s(%lu, %u) %s NULL",
 					i,
-					network_mysqld_proto_field_get_typestring(field->type),
+					network_mysqld_column_get_typestring(field),
 					field->max_length, field->decimals,
 					field->flags & NOT_NULL_FLAG ? "NOT" : "DEFAULT"
 				 );
@@ -166,7 +76,7 @@ void network_mysqld_table_print(network_mysqld_table *tbl) {
 		default:
 			g_string_append_printf(out, "  field_%d %s(%lu) %s NULL",
 					i,
-					network_mysqld_proto_field_get_typestring(field->type),
+					network_mysqld_column_get_typestring(field),
 					field->max_length,
 					field->flags & NOT_NULL_FLAG ? "NOT" : "DEFAULT"
 				 );

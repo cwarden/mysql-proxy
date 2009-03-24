@@ -204,6 +204,7 @@ typedef struct {
 
 NETWORK_API network_mysqld_binlog_event *network_mysqld_binlog_event_new(void);
 NETWORK_API void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event);
+NETWORK_API const char *network_mysqld_binlog_get_eventname(enum Log_event_type type);
 NETWORK_API int network_mysqld_proto_get_binlog_event_header(network_packet *packet, network_mysqld_binlog_event *event);
 NETWORK_API int network_mysqld_proto_get_binlog_event(network_packet *packet, 
 		network_mysqld_binlog *binlog,

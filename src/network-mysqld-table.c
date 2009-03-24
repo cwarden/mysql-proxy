@@ -35,6 +35,45 @@ void network_mysqld_column_free(network_mysqld_column *col) {
 	g_free(col);
 }
 
+struct {
+	enum enum_field_types type;
+	const char *name;
+} field_type_name[] = {
+	{ MYSQL_TYPE_STRING, "CHAR" },
+	{ MYSQL_TYPE_VARCHAR, "VARCHAR" },
+	{ MYSQL_TYPE_BLOB, "BLOB" },
+
+	{ MYSQL_TYPE_TINY, "TINYINT" },
+	{ MYSQL_TYPE_SHORT, "SMALLINT" },
+	{ MYSQL_TYPE_INT24, "MEDIUMINT" },
+	{ MYSQL_TYPE_LONG, "INT" },
+	{ MYSQL_TYPE_NEWDECIMAL, "DECIMAL" },
+
+	{ MYSQL_TYPE_ENUM, "ENUM" },
+
+	{ MYSQL_TYPE_TIMESTAMP, "TIMESTAMP" },
+	{ MYSQL_TYPE_DATE, "DATE" },
+	{ MYSQL_TYPE_DATETIME, "DATETIME" },
+
+	{ 0, NULL }
+};
+
+const char *network_mysqld_column_get_typestring(network_mysqld_column *column) {
+	static const char *unknown_type = "UNKNOWN";
+	enum enum_field_types type = column->type;
+	guint i;
+
+	for (i = 0; field_type_name[i].name; i++) {
+		if ((guchar)field_type_name[i].type == (guchar)type) return field_type_name[i].name;
+	}
+
+	g_critical("%s: field-type %d isn't known yet", 
+			G_STRLOC,
+			type);
+
+	return unknown_type;
+}
+
 network_mysqld_columns *network_mysqld_columns_new() {
 	return g_ptr_array_new();
 }
