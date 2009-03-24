@@ -27,8 +27,6 @@ for event in f:next() do
 	assert(event.flags)
 	assert(event.event_size)
 
-	-- print(("%d, %d, %s"):format(event.timestamp, event.server_id, event.type))
-
 	-- try to decode the event 
 	if event.type == "QUERY_EVENT" then
 		assert(event.query.thread_id)
@@ -36,6 +34,23 @@ for event in f:next() do
 		assert(event.query.error_code)
 		assert(event.query.query)
 		-- print(("%d: %s"):format(event.query.thread_id, event.query.query))
+	elseif event.type == "ROTATE_EVENT" then
+		assert(event.rotate.binlog_file)
+		assert(event.rotate.binlog_pos)
+		-- print(("%d: %s"):format(event.rotate.binlog_pos, event.rotate.binlog_file))
+	elseif event.type == "XID_EVENT" then
+		assert(event.xid.xid_id)
+	elseif event.type == "INTVAR_EVENT" then
+		assert(event.intvar.type) -- that should be a string 
+		assert(event.intvar.value)
+	elseif event.type == "FORMAT_DESCRIPTION_EVENT" then
+		assert(event.format.master_version)
+		assert(event.format.binlog_version)
+		assert(event.format.created_ts)
+		-- print(("format: %d, %s, %d"):format(event.format.binlog_version, event.format.master_version, event.format.created_ts))
+	else
+		-- dump the unknown event to make it easier to add a decoder for them
+		print(("%d, %d, %s"):format(event.timestamp, event.server_id, event.type))
 	end
 end
 

@@ -59,6 +59,154 @@
 		return 1; \
 	}
 
+static int lua_mysqld_binlog_format_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_CSTR((&(event->event.format_event)), master_version);
+	LUA_UDATA_EXPORT_INT((&(event->event.format_event)), binlog_version);
+	LUA_UDATA_EXPORT_INT((&(event->event.format_event)), created_ts);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_format_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_format_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_format_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_format_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+
+static int lua_mysqld_binlog_intvar_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.intvar)), type);
+	LUA_UDATA_EXPORT_INT((&(event->event.intvar)), value);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_intvar_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_intvar_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_intvar_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_intvar_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+
+static int lua_mysqld_binlog_xid_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.xid)), xid_id);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_xid_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_xid_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_xid_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_xid_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+
+static int lua_mysqld_binlog_rotate_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.rotate_event)), binlog_pos);
+	LUA_UDATA_EXPORT_CSTR((&(event->event.rotate_event)), binlog_file);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_rotate_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_rotate_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_rotate_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_rotate_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+
 static int lua_mysqld_binlog_query_event_get(lua_State *L) {
 	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
 	gsize keysize = 0;
@@ -117,6 +265,22 @@ static int lua_mysqld_binlog_event_get(lua_State *L) {
 
 	if (strleq(C("query"), key, keysize)) {
 		return lua_mysqld_binlog_query_event_push(L, event);
+	}
+
+	if (strleq(C("rotate"), key, keysize)) {
+		return lua_mysqld_binlog_rotate_event_push(L, event);
+	}
+	
+	if (strleq(C("xid"), key, keysize)) {
+		return lua_mysqld_binlog_xid_event_push(L, event);
+	}
+
+	if (strleq(C("intvar"), key, keysize)) {
+		return lua_mysqld_binlog_intvar_event_push(L, event);
+	}
+
+	if (strleq(C("format"), key, keysize)) {
+		return lua_mysqld_binlog_format_event_push(L, event);
 	}
 
 	return 0;
