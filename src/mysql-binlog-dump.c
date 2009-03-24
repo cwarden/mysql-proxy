@@ -33,256 +33,10 @@
 #include "chassis-log.h"
 #include "chassis-keyfile.h"
 #include "network-mysqld-proto.h"
+#include "network-mysqld-myisam.h"
 #include "network-mysqld-binlog.h"
 
 #define S(x) x->str, x->len
-
-
-typedef struct {
-	MYSQL_FIELD *fielddef;
-
-	union {
-		guint64 i;
-		gchar *s;
-	} data;
-	guint64 data_len;
-
-	gboolean is_null;
-} network_mysqld_proto_field;
-
-network_mysqld_proto_field *network_mysqld_proto_field_new() {
-	network_mysqld_proto_field *field;
-
-	field = g_new0(network_mysqld_proto_field, 1);
-
-	return field;
-}
-
-void network_mysqld_proto_field_free(network_mysqld_proto_field *field) {
-	if (!field) return;
-
-	switch ((guchar)field->fielddef->type) {
-	case MYSQL_TYPE_TIMESTAMP:
-	case MYSQL_TYPE_DATE:
-	case MYSQL_TYPE_DATETIME:
-
-	case MYSQL_TYPE_TINY:
-	case MYSQL_TYPE_SHORT:
-	case MYSQL_TYPE_INT24:
-	case MYSQL_TYPE_LONG:
-
-	case MYSQL_TYPE_DECIMAL:
-	case MYSQL_TYPE_NEWDECIMAL:
-
-	case MYSQL_TYPE_ENUM:
-		break;
-	case MYSQL_TYPE_BLOB:
-	case MYSQL_TYPE_VARCHAR:
-	case MYSQL_TYPE_VAR_STRING:
-	case MYSQL_TYPE_STRING:
-		if (field->data.s) g_free(field->data.s);
-		break;
-	default:
-		g_message("%s: unknown field_type to free: %d",
-				G_STRLOC,
-				field->fielddef->type);
-		break;
-	}
-
-	g_free(field);
-}
-
-int network_mysqld_proto_field_get(network_packet *packet, 
-		network_mysqld_proto_field *field) {
-	guint64 length;
-	guint8  i8;
-	guint16 i16;
-	guint32 i32;
-	guint64 i64;
-	int err = 0;
-
-	switch ((guchar)field->fielddef->type) {
-	case MYSQL_TYPE_TIMESTAMP: /* int4store */
-	case MYSQL_TYPE_LONG:
-		err = err || network_mysqld_proto_get_int32(packet, &i32);
-		if (!err) field->data.i = i32;
-		break;
-	case MYSQL_TYPE_DATETIME: /* int8store */
-	case MYSQL_TYPE_LONGLONG:
-		err = err || network_mysqld_proto_get_int64(packet, &i64);
-		if (!err) field->data.i = i64;
-		break;
-	case MYSQL_TYPE_INT24:     
-	case MYSQL_TYPE_DATE:      /* int3store, a newdate, old-data is 4 byte */
-		err = err || network_mysqld_proto_get_int24(packet, &i32);
-		if (!err) field->data.i = i32;
-		break;
-	case MYSQL_TYPE_SHORT:     
-		err = err || network_mysqld_proto_get_int16(packet, &i16);
-		if (!err) field->data.i = i16;
-		break;
-	case MYSQL_TYPE_TINY:     
-		err = err || network_mysqld_proto_get_int8(packet, &i8);
-		if (!err) field->data.i = i8;
-		break;
-	case MYSQL_TYPE_ENUM:
-		switch (field->fielddef->max_length) {
-		case 1:
-			err = err || network_mysqld_proto_get_int8(packet, &i8);
-			if (!err) field->data.i = i8;
-			break;
-		case 2:
-			err = err || network_mysqld_proto_get_int16(packet, &i16);
-			if (!err) field->data.i = i16;
-			break;
-		default:
-			g_error("%s: enum-length = %lu", 
-					G_STRLOC,
-					field->fielddef->max_length);
-			break;
-		}
-		break;
-	case MYSQL_TYPE_BLOB:
-		switch (field->fielddef->max_length) {
-		case 1:
-			err = err || network_mysqld_proto_get_int8(packet, &i8);
-			if (!err) length = i8;
-			break;
-		case 2:
-			err = err || network_mysqld_proto_get_int16(packet, &i16);
-			if (!err) length = i16;
-			break;
-		case 3:
-			err = err || network_mysqld_proto_get_int24(packet, &i32);
-			if (!err) length = i32;
-			break;
-		case 4:
-			err = err || network_mysqld_proto_get_int32(packet, &i32);
-			if (!err) length = i32;
-			break;
-		default:
-			/* unknown blob-length */
-			g_debug_hexdump(G_STRLOC, S(packet->data));
-			g_error("%s: blob-length = %lu", 
-					G_STRLOC,
-					field->fielddef->max_length);
-			break;
-		}
-		err = err || network_mysqld_proto_get_string_len(packet, &field->data.s, length);
-		break;
-	case MYSQL_TYPE_VARCHAR:
-	case MYSQL_TYPE_VAR_STRING:
-	case MYSQL_TYPE_STRING:
-		if (field->fielddef->max_length < 256) {
-			err = err || network_mysqld_proto_get_int8(packet, &i8);
-			err = err || network_mysqld_proto_get_string_len(packet, &field->data.s, i8);
-		} else {
-			err = err || network_mysqld_proto_get_int16(packet, &i16);
-			err = err || network_mysqld_proto_get_string_len(packet, &field->data.s, i16);
-		}
-
-		break;
-	case MYSQL_TYPE_NEWDECIMAL: {
-		/* the decimal is binary encoded
-		 */
-		guchar digits_per_bytes[] = { 0, 1, 1, 2, 2, 3, 3, 4, 4, 4 }; /* how many bytes are needed to store x decimal digits */
-
-		guint i_digits = field->fielddef->max_length - field->fielddef->decimals;
-		guint f_digits = field->fielddef->decimals;
-
-		guint decimal_full_blocks       = i_digits / 9; /* 9 decimal digits in 4 bytes */
-		guint decimal_last_block_digits = i_digits % 9; /* how many digits are left ? */
-
-		guint scale_full_blocks         = f_digits / 9; /* 9 decimal digits in 4 bytes */
-		guint scale_last_block_digits   = f_digits % 9; /* how many digits are left ? */
-
-		guint size = 0;
-
-		size += decimal_full_blocks * digits_per_bytes[9] + digits_per_bytes[decimal_last_block_digits];
-		size += scale_full_blocks   * digits_per_bytes[9] + digits_per_bytes[scale_last_block_digits];
-
-#if 0
-		g_debug_hexdump(G_STRLOC " (NEWDECIMAL)", packet->data->str, packet->data->len);
-#endif
-#if 0
-		g_critical("%s: don't know how to decode NEWDECIMAL(%lu, %u) at offset %u (%d)",
-				G_STRLOC,
-				field->fielddef->max_length,
-				field->fielddef->decimals,
-				packet->offset,
-				size
-				);
-#endif
-		err = err || network_mysqld_proto_skip(packet, size);
-		break; }
-	default:
-		g_debug_hexdump(G_STRLOC, packet->data->str, packet->data->len);
-		g_error("%s: unknown field-type to fetch: %d",
-				G_STRLOC,
-				field->fielddef->type);
-		break;
-	}
-
-	return err ? -1 : 0;
-}
-
-GPtrArray *network_mysqld_proto_fields_new_full(
-		GPtrArray *fielddefs,
-		gchar *null_bits,
-		guint G_GNUC_UNUSED null_bits_len) {
-	GPtrArray *fields;
-	guint i;
-
-	fields = g_ptr_array_new();
-
-	for (i = 0; i < fielddefs->len; i++) {
-		MYSQL_FIELD *fielddef = fielddefs->pdata[i];
-		network_mysqld_proto_field *field = network_mysqld_proto_field_new();
-
-		guint byteoffset = i / 8;
-		guint bitoffset = i % 8;
-
-		field->fielddef = fielddef;
-		field->is_null = (null_bits[byteoffset] >> bitoffset) & 0x1;
-
-		/* the field is defined as NOT NULL, so the null-bit shouldn't be set */
-		if ((fielddef->flags & NOT_NULL_FLAG) != 0) {
-			if (field->is_null) {
-				g_error("%s: [%d] field is defined as NOT NULL, but nul-bit is set",
-						G_STRLOC,
-						i
-						);
-			}
-		}
-		g_ptr_array_add(fields, field);
-	}
-
-	return fields;
-}
-
-int network_mysqld_proto_fields_get(network_packet *packet, GPtrArray *fields) {
-	guint i;
-
-	for (i = 0; i < fields->len; i++) {
-		network_mysqld_proto_field *field = fields->pdata[i];
-
-		if (!field->is_null) {
-			if (network_mysqld_proto_field_get(packet, field)) return -1;
-		}
-	}
-
-	return 0;
-}
-
-void network_mysqld_proto_fields_free(GPtrArray *fields) {
-	guint i;
-	if (!fields) return;
-
-	for (i = 0; i < fields->len; i++) {
-		network_mysqld_proto_field_free(fields->pdata[i]);
-	}
-	g_ptr_array_free(fields, TRUE);
-}
 
 struct {
 	enum Log_event_type type;
@@ -382,8 +136,8 @@ void network_mysqld_table_print(network_mysqld_table *tbl) {
 			tbl->db_name->str,
 			tbl->table_name->str);
 
-	for (i = 0; i < tbl->fields->len; i++) {
-		MYSQL_FIELD *field = tbl->fields->pdata[i];
+	for (i = 0; i < tbl->columns->len; i++) {
+		network_mysqld_column *field = tbl->columns->pdata[i];
 
 		if (i > 0) {
 			g_string_append(out, ",\n");
@@ -511,7 +265,7 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 #endif
 
 		do {
-			GPtrArray *pre_fields, *post_fields = NULL;
+			network_mysqld_myisam_row *pre_fields, *post_fields = NULL;
 			GString *out = g_string_new(NULL);
 			gchar *post_bits = NULL, *pre_bits;
 
@@ -520,13 +274,14 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 					&pre_bits,
 					event->event.row_event.null_bits_len);
 
-			pre_fields = network_mysqld_proto_fields_new_full(tbl->fields, 
+			pre_fields = network_mysqld_myisam_row_new();
+
+			err = err || network_mysqld_myisam_row_init(pre_fields,
+					tbl, 
 					pre_bits, 
 					event->event.row_event.null_bits_len);
 
-			if (network_mysqld_proto_fields_get(&row_packet, pre_fields)) {
-				break;
-			}
+			err = err || network_mysqld_proto_get_myisam_row(&row_packet, pre_fields);
 
 			if (event->event_type == UPDATE_ROWS_EVENT) {
 				err = err || network_mysqld_proto_get_string_len(
@@ -534,10 +289,13 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						&post_bits,
 						event->event.row_event.null_bits_len);
 		
-				post_fields = network_mysqld_proto_fields_new_full(tbl->fields, 
-					post_bits, 
-					event->event.row_event.null_bits_len);
-				network_mysqld_proto_fields_get(&row_packet, post_fields);
+				post_fields = network_mysqld_myisam_row_new();
+
+				err = err || network_mysqld_myisam_row_init(post_fields,
+						tbl,
+						post_bits, 
+						event->event.row_event.null_bits_len);
+				err = err || network_mysqld_proto_get_myisam_row(&row_packet, post_fields);
 			}
 
 			/* call lua */
@@ -548,15 +306,15 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						tbl->db_name->str,
 						tbl->table_name->str);
 
-				for (i = 0; i < post_fields->len; i++) {
-					network_mysqld_proto_field *field = post_fields->pdata[i];
+				for (i = 0; i < post_fields->fields->len; i++) {
+					network_mysqld_myisam_field *field = post_fields->fields->pdata[i];
 					if (i > 0) {
 						g_string_append_printf(out, ", ");
 					}
 					if (field->is_null) {
 						g_string_append_printf(out, "field_%d = NULL", i);
 					} else {
-						switch((guchar)field->fielddef->type) {
+						switch((guchar)field->column->type) {
 						case MYSQL_TYPE_DATE:
 						case MYSQL_TYPE_TIMESTAMP:
 						case MYSQL_TYPE_DATETIME:
@@ -582,22 +340,22 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						default:
 							g_error("%s: field-type %d isn't known",
 									G_STRLOC,
-									field->fielddef->type);
+									field->column->type);
 							break;
 						}
 					}
 				}
 
 				g_string_append_printf(out, "\n WHERE ");
-				for (i = 0; i < pre_fields->len; i++) {
-					network_mysqld_proto_field *field = pre_fields->pdata[i];
+				for (i = 0; i < pre_fields->fields->len; i++) {
+					network_mysqld_myisam_field *field = pre_fields->fields->pdata[i];
 					if (i > 0) {
 						g_string_append_printf(out, " AND ");
 					}
 					if (field->is_null) {
 						g_string_append_printf(out, "field_%d IS NULL", i);
 					} else {
-						switch((guchar)field->fielddef->type) {
+						switch((guchar)field->column->type) {
 						case MYSQL_TYPE_TIMESTAMP:
 						case MYSQL_TYPE_DATE:
 						case MYSQL_TYPE_DATETIME:
@@ -623,7 +381,7 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						default:
 							g_error("%s: field-type %d isn't known",
 									G_STRLOC,
-									field->fielddef->type);
+									field->column->type);
 							break;
 						}
 					}
@@ -634,15 +392,15 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						tbl->db_name->str,
 						tbl->table_name->str);
 
-				for (i = 0; i < pre_fields->len; i++) {
-					network_mysqld_proto_field *field = pre_fields->pdata[i];
+				for (i = 0; i < pre_fields->fields->len; i++) {
+					network_mysqld_myisam_field *field = pre_fields->fields->pdata[i];
 					if (i > 0) {
 						g_string_append_printf(out, ", ");
 					}
 					if (field->is_null) {
 						g_string_append(out, "NULL");
 					} else {
-						switch((guchar)field->fielddef->type) {
+						switch((guchar)field->column->type) {
 						case MYSQL_TYPE_TIMESTAMP:
 						case MYSQL_TYPE_DATE:
 						case MYSQL_TYPE_DATETIME:
@@ -668,7 +426,7 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						default:
 							g_error("%s: field-type %d isn't known",
 									G_STRLOC,
-									field->fielddef->type);
+									field->column->type);
 							break;
 						}
 					}
@@ -681,15 +439,15 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						tbl->db_name->str,
 						tbl->table_name->str);
 
-				for (i = 0; i < pre_fields->len; i++) {
-					network_mysqld_proto_field *field = pre_fields->pdata[i];
+				for (i = 0; i < pre_fields->fields->len; i++) {
+					network_mysqld_myisam_field *field = pre_fields->fields->pdata[i];
 					if (i > 0) {
 						g_string_append_printf(out, " AND ");
 					}
 					if (field->is_null) {
 						g_string_append_printf(out, "field_%d IS NULL", i);
 					} else {
-						switch((guchar)field->fielddef->type) {
+						switch((guchar)field->column->type) {
 						case MYSQL_TYPE_TIMESTAMP:
 						case MYSQL_TYPE_DATE:
 						case MYSQL_TYPE_DATETIME:
@@ -715,7 +473,7 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 						default:
 							g_error("%s: field-type %d isn't known",
 									G_STRLOC,
-									field->fielddef->type);
+									field->column->type);
 							break;
 						}
 					}
@@ -731,8 +489,8 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 
 			g_string_free(out, TRUE);
 
-			if (pre_fields) network_mysqld_proto_fields_free(pre_fields);
-			if (post_fields) network_mysqld_proto_fields_free(post_fields);
+			if (pre_fields) network_mysqld_myisam_row_free(pre_fields);
+			if (post_fields) network_mysqld_myisam_row_free(post_fields);
 			if (pre_bits) g_free(pre_bits);
 			if (post_bits) g_free(post_bits);
 		} while (row_packet.data->len > row_packet.offset);

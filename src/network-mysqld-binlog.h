@@ -21,6 +21,7 @@
 #define _NETWORK_MYSQLD_BINLOG_H_
 
 #include "network-mysqld-proto.h"
+#include "network-mysqld-table.h"
 
 /**
  * stolen from sql/log_event.h
@@ -96,17 +97,6 @@ enum Log_event_type
  * replication
  */
 
-typedef struct {
-	guint64 table_id;
-
-	GString *db_name;
-	GString *table_name;
-
-	GPtrArray *fields;
-} network_mysqld_table;
-
-NETWORK_API network_mysqld_table *network_mysqld_table_new();
-NETWORK_API void network_mysqld_table_free(network_mysqld_table *tbl);
 NETWORK_API guint64 *guint64_new(guint64 i);
 
 typedef struct {

@@ -19,7 +19,7 @@ mysql_proxy_LDADD		= $(BUILD_LDADD)
 mysql_binlog_dump_SOURCES	= mysql-binlog-dump.c
 mysql_binlog_dump_CPPFLAGS	= $(BUILD_CPPFLAGS)
 mysql_binlog_dump_CFLAGS	= $(BUILD_CFLAGS)
-mysql_binlog_dump_LDADD		= $(BUILD_LDADD)
+mysql_binlog_dump_LDADD		= $(BUILD_LDADD) libmysql-proto-myisam.la
 
 mysql_myisam_dump_SOURCES	= mysql-myisam-dump.c
 mysql_myisam_dump_CPPFLAGS	= $(BUILD_CPPFLAGS)
@@ -38,6 +38,7 @@ libmysql_proxy_la_SOURCES = \
 	network-mysqld-proto.c \
 	network-mysqld-binlog.c \
 	network-mysqld-packet.c \
+	network-mysqld-table.c \
 	network-mysqld-masterinfo.c \
 	network-conn-pool.c  \
 	network-conn-pool-lua.c  \
@@ -54,6 +55,13 @@ libmysql_proxy_la_SOURCES = \
 libmysql_proxy_la_LDFLAGS  = -export-dynamic -no-undefined -dynamic
 libmysql_proxy_la_CPPFLAGS = $(MYSQL_CFLAGS) $(GLIB_CFLAGS) $(LUA_CFLAGS) $(GMODULE_CFLAGS)
 libmysql_proxy_la_LIBADD   = $(EVENT_LIBS) $(GLIB_LIBS) $(GMODULE_LIBS) libmysql-chassis.la
+
+pkglib_LTLIBRARIES += libmysql-proto-myisam.la
+libmysql_proto_myisam_la_SOURCES = \
+	network-mysqld-myisam.c 
+libmysql_proto_myisam_la_LDFLAGS  = -export-dynamic -no-undefined -dynamic
+libmysql_proto_myisam_la_CPPFLAGS = $(MYSQL_CFLAGS) $(GLIB_CFLAGS) $(LUA_CFLAGS) $(GMODULE_CFLAGS)
+libmysql_proto_myisam_la_LIBADD   = $(EVENT_LIBS) $(GLIB_LIBS) $(GMODULE_LIBS) libmysql-proxy.la
 
 libmysql_chassis_la_SOURCES = \
 	glib-ext.c \
@@ -76,6 +84,8 @@ noinst_HEADERS=\
 	network-mysqld-lua.h \
 	network-mysqld-proto.h \
 	network-mysqld-binlog.h \
+	network-mysqld-table.h \
+	network-mysqld-myisam.h \
 	network-mysqld-packet.h \
 	network-mysqld-masterinfo.h \
 	network-conn-pool.h \

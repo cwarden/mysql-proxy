@@ -19,18 +19,58 @@
 
 #include <glib.h>
 
-#include "network-mysqld.h"
+#include "network-mysqld-table.h"
 
-network_mysqld_table *network_mysqld_table_init(void) {
-	network_mysqld_table *t;
+network_mysqld_column *network_mysqld_column_new() {
+	network_mysqld_column *col;
 
-	t = g_new0(network_mysqld_table, 1);
+	col = g_new0(network_mysqld_column, 1);
 
-	return t;
+	return col;
 }
 
-void network_mysqld_table_free(network_mysqld_table *t) {
-	if (!t) return;
+void network_mysqld_column_free(network_mysqld_column *col) {
+	if (!col) return;
 
-	g_free(t);
+	g_free(col);
 }
+
+network_mysqld_columns *network_mysqld_columns_new() {
+	return g_ptr_array_new();
+}
+
+void network_mysqld_columns_free(network_mysqld_columns *cols) {
+	guint i;
+
+	if (!cols) return;
+
+	for (i = 0; i < cols->len; i++) {
+		network_mysqld_column_free(cols->pdata[i]);
+	}
+
+	g_ptr_array_free(cols, TRUE);
+}
+
+network_mysqld_table *network_mysqld_table_new() {
+	network_mysqld_table *tbl;
+
+	tbl = g_new0(network_mysqld_table, 1);
+	tbl->db_name = g_string_new(NULL);
+	tbl->table_name = g_string_new(NULL);
+
+	tbl->columns = network_mysqld_columns_new();
+
+	return tbl;
+}
+
+void network_mysqld_table_free(network_mysqld_table *tbl) {
+	if (!tbl) return;
+
+	g_string_free(tbl->db_name, TRUE);
+	g_string_free(tbl->table_name, TRUE);
+
+	network_mysqld_columns_free(tbl->columns);
+
+	g_free(tbl);
+}
+

@@ -25,29 +25,6 @@
 
 #define S(x) x->str, x->len
 
-network_mysqld_table *network_mysqld_table_new() {
-	network_mysqld_table *tbl;
-
-	tbl = g_new0(network_mysqld_table, 1);
-	tbl->db_name = g_string_new(NULL);
-	tbl->table_name = g_string_new(NULL);
-
-	tbl->fields = network_mysqld_proto_fielddefs_new();
-
-	return tbl;
-}
-
-void network_mysqld_table_free(network_mysqld_table *tbl) {
-	if (!tbl) return;
-
-	g_string_free(tbl->db_name, TRUE);
-	g_string_free(tbl->table_name, TRUE);
-
-	network_mysqld_proto_fielddefs_free(tbl->fields);
-
-	g_free(tbl);
-}
-
 static guint guint64_hash(gconstpointer _key) {
 	const guint64 *key = _key;
 
@@ -427,7 +404,7 @@ int network_mysqld_binlog_event_tablemap_get(
 
 	/* the metadata is field specific */
 	for (i = 0; i < event->event.table_map_event.columns_len; i++) {
-		MYSQL_FIELD *field = network_mysqld_proto_fielddef_new();
+		network_mysqld_column *field = network_mysqld_column_new();
 		enum enum_field_types col_type;
 		guint8 byte0, byte1;
 		guint16 varchar_length;
@@ -559,7 +536,7 @@ int network_mysqld_binlog_event_tablemap_get(
 			break;
 		}
 
-		g_ptr_array_add(tbl->fields, field);
+		g_ptr_array_add(tbl->columns, field);
 	}
 
 	if (metadata_packet.offset != metadata_packet.data->len) {
