@@ -286,9 +286,18 @@ static int lua_mysqld_binlog_event_get(lua_State *L) {
 	return 0;
 }
 
+int lua_mysqld_binlog_event_gc(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+
+	network_mysqld_binlog_event_free(event);
+
+	return 0;
+}
+
 int lua_mysqld_binlog_event_getmetatable(lua_State *L) {
 	static const struct luaL_reg methods[] = {
 		{ "__index", lua_mysqld_binlog_event_get },
+		{ "__gc", lua_mysqld_binlog_event_gc },
 		{ NULL, NULL },
 	};
 	return proxy_getmetatable(L, methods);
@@ -373,9 +382,18 @@ static int lua_mysqld_binlog_next(lua_State *L) {
 	return 1;
 }
 
+static int lua_mysqld_binlog_close(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+
+	close(binlog->fd);
+
+	return 0;
+}
+
 int lua_mysqld_binlog_getmetatable(lua_State *L) {
 	static const struct luaL_reg methods[] = {
 		{ "next", lua_mysqld_binlog_next },
+		{ "close", lua_mysqld_binlog_close },
 		{ NULL, NULL },
 	};
 	return proxy_getmetatable(L, methods);
