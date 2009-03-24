@@ -32,6 +32,8 @@ for event in f:next() do
 	-- try to decode the event 
 	if event.type == "QUERY_EVENT" then
 		assert(event.query.thread_id)
+		assert(event.query.exec_time)
+		assert(event.query.error_code)
 		assert(event.query.query)
 		-- print(("%d: %s"):format(event.query.thread_id, event.query.query))
 	end

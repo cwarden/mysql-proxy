@@ -66,6 +66,8 @@ static int lua_mysqld_binlog_query_event_get(lua_State *L) {
 
 	/* FIXME: a bit hacky, but this way we can reuse the macros */
 	LUA_UDATA_EXPORT_INT((&(event->event.query_event)), thread_id);
+	LUA_UDATA_EXPORT_INT((&(event->event.query_event)), exec_time);
+	LUA_UDATA_EXPORT_INT((&(event->event.query_event)), error_code);
 	LUA_UDATA_EXPORT_CSTR((&(event->event.query_event)), db_name);
 	LUA_UDATA_EXPORT_CSTR((&(event->event.query_event)), query);
 
