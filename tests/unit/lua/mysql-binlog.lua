@@ -58,7 +58,7 @@ while file do
 		elseif event.type == "TABLE_MAP_EVENT" then
 			-- if we want RBR to work, we have to track the table-map events 
 			--
-			f:track_table_map(event)
+			f:table_register(event.table_map) -- register the current table, can be table or event
 
 			assert(event.table_map.table_id)
 			assert(event.table_map.flags)
@@ -66,12 +66,23 @@ while file do
 			assert(event.table_map.table_name)
 			-- print(("tablemap: %d, %d, %s::%s"):format(event.table_map.table_id, event.table_map.flags, event.table_map.db_name, event.table_map.table_name))
 		elseif event.type == "DELETE_ROWS_EVENT" then
+			local tbl = f:table_get(event.rbr.table_id)
+
 			assert(event.rbr.table_id)
 			assert(event.rbr.flags)
-			-- print(("rows: %d, %d"):format(event.rbr.table_id, event.rbr.flags))
+			print(("delete-row: table=%d (%s), flags=%d"):format(event.rbr.table_id, tbl.table_name, event.rbr.flags))
+
+			for row in event.rbr:next(tbl) do
+				for field_ndx, field in ipairs(row.before) do
+					print(("[%d] %s"):format(field_ndx, field))
+				end
+				for field_ndx, field in ipairs(row.after) do
+					print(("%d"):format(field_ndx))
+				end
+			end
 		else
 			-- dump the unknown event to make it easier to add a decoder for them
-			print(("%d, %d, %s"):format(event.timestamp, event.server_id, event.type))
+			print(("-- unknown-event: %d, %d, %s"):format(event.timestamp, event.server_id, event.type))
 		end
 
 		---

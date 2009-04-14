@@ -26,7 +26,10 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
+#include <unistd.h>
+
 #include "network-mysqld-binlog.h"
+#include "network-mysqld-myisam.h"
 #include "glib-ext.h"
 #include "lua-env.h"
 
@@ -58,6 +61,242 @@
 		lua_pushinteger(L, tbl->name); \
 		return 1; \
 	}
+
+typedef struct {
+	network_mysqld_binlog_event *event;
+	network_mysqld_table *table;
+	network_packet row_packet;
+	GString row;
+} network_mysqld_binlog_rows_event_iter;
+
+static int network_mysqld_binlog_get_myisam_row(network_packet *packet, 
+		network_mysqld_table *table,
+		network_mysqld_myisam_row *row, int null_bits_len) {
+	int err = 0;
+	gchar *null_bits = NULL;
+
+	err = err || network_mysqld_proto_get_string_len(
+			packet, 
+			&null_bits,
+			null_bits_len);
+
+	err = err || network_mysqld_myisam_row_init(row,
+			table, 
+			null_bits, 
+			null_bits_len);
+
+	err = err || network_mysqld_proto_get_myisam_row(packet, row);
+
+	if (null_bits) g_free(null_bits);
+
+	return err;
+}
+
+static int lua_mysqld_binlog_rows_event_next_iter(lua_State *L) {
+	network_mysqld_binlog_rows_event_iter *iter = (network_mysqld_binlog_rows_event_iter *)lua_touserdata(L, lua_upvalueindex(1));
+	network_mysqld_binlog_event *event = iter->event;
+	network_mysqld_table *tbl = iter->table;
+	network_packet *packet = &(iter->row_packet);
+
+	/* get a row from the current packet */
+	network_mysqld_myisam_row *pre_fields, *post_fields = NULL;
+	int err = 0;
+	gsize i;
+
+	/* check if all data is parsed */
+	if (packet->offset >= packet->data->len) return 0;
+
+	pre_fields = network_mysqld_myisam_row_new();
+
+	err = err || network_mysqld_binlog_get_myisam_row(packet, 
+			tbl,
+			pre_fields, 
+			event->event.row_event.null_bits_len);
+
+	if (event->event_type == UPDATE_ROWS_EVENT) {
+		post_fields = network_mysqld_myisam_row_new();
+
+		err = err || network_mysqld_binlog_get_myisam_row(packet, 
+				tbl,
+				post_fields, 
+				event->event.row_event.null_bits_len);
+	}
+
+	/* push a pre and a post table */
+	lua_newtable(L);
+	lua_newtable(L);
+	for (i = 0; i < pre_fields->fields->len; i++) {
+		network_mysqld_myisam_field *field = pre_fields->fields->pdata[i];
+
+		lua_pushinteger(L, i + 1);
+		if (field->is_null) {
+			lua_pushnil(L);
+		} else {
+			switch((guchar)field->column->type) {
+			case MYSQL_TYPE_TIMESTAMP:
+			case MYSQL_TYPE_DATE:
+			case MYSQL_TYPE_DATETIME:
+
+			case MYSQL_TYPE_TINY:
+			case MYSQL_TYPE_SHORT:
+			case MYSQL_TYPE_INT24:
+			case MYSQL_TYPE_LONG:
+			case MYSQL_TYPE_LONGLONG:
+			case MYSQL_TYPE_ENUM:
+				lua_pushnumber(L, field->data.i);
+				break;
+			case MYSQL_TYPE_DOUBLE:
+				lua_pushnumber(L, field->data.f);
+				break;
+			case MYSQL_TYPE_VARCHAR:
+			case MYSQL_TYPE_VAR_STRING:
+			case MYSQL_TYPE_STRING:
+				lua_pushstring(L, field->data.s);
+				break;
+			case MYSQL_TYPE_BLOB:
+				lua_pushstring(L, "(blob)");
+				break;
+			case MYSQL_TYPE_NEWDECIMAL:
+				lua_pushstring(L, "(decimal)");
+				break;
+			default:
+				luaL_error(L, "%s: field-type %d isn't known",
+						G_STRLOC,
+						field->column->type);
+				break;
+			}
+		}
+
+		lua_settable(L, -3);
+	}
+	lua_setfield(L, -2, "before");
+	lua_newtable(L);
+	lua_setfield(L, -2, "after");
+
+	return 1;
+}
+
+/**
+ * the upvalue generator for our binlog iterator 
+ */
+static int lua_mysqld_binlog_rows_event_next(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	network_mysqld_table *table;
+	network_mysqld_binlog_rows_event_iter *iter;
+
+	luaL_checkany(L, 2);
+	table = *(network_mysqld_table **)lua_touserdata(L, 2);
+
+	iter = (network_mysqld_binlog_rows_event_iter *)lua_newuserdata(L, sizeof(network_mysqld_binlog_rows_event_iter)); /* the upvalue */
+	iter->event = event;
+	iter->table = table;
+
+	if (!iter->table) {
+		g_critical("%s: table-id: %"G_GUINT64_FORMAT" isn't known, needed for a %d event",
+				G_STRLOC,
+				event->event.row_event.table_id,
+				event->event_type
+				);
+		return 0;
+	}
+
+	/* setup the row-iterator */
+	iter->row.str = event->event.row_event.row;
+	iter->row.len = event->event.row_event.row_len;
+
+	iter->row_packet.data = &(iter->row);
+	iter->row_packet.offset = 0;
+
+	/* push the iterator */
+	lua_pushcclosure(L, lua_mysqld_binlog_rows_event_next_iter, 1);
+
+	return 1;
+}
+
+
+/**
+ * expose all 3 kinds of _ROWS_EVENT
+ */
+static int lua_mysqld_binlog_rows_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.row_event)), table_id);
+	LUA_UDATA_EXPORT_INT((&(event->event.row_event)), flags);
+
+	if (strleq(C("next"), key, keysize)) {
+		lua_pushcfunction(L, lua_mysqld_binlog_rows_event_next);
+
+		return 1;
+	}
+
+	return 0;
+}
+
+int lua_mysqld_binlog_rows_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_rows_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_rows_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_rows_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
+static int lua_mysqld_binlog_tablemap_event_get(lua_State *L) {
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
+	gsize keysize = 0;
+	const char *key = luaL_checklstring(L, 2, &keysize);
+
+	/* FIXME: a bit hacky, but this way we can reuse the macros */
+	LUA_UDATA_EXPORT_INT((&(event->event.table_map_event)), table_id);
+	LUA_UDATA_EXPORT_INT((&(event->event.table_map_event)), flags);
+	LUA_UDATA_EXPORT_CSTR((&(event->event.table_map_event)), db_name);
+	LUA_UDATA_EXPORT_CSTR((&(event->event.table_map_event)), table_name);
+
+	return 0;
+}
+
+int lua_mysqld_binlog_tablemap_event_getmetatable(lua_State *L) {
+	static const struct luaL_reg methods[] = {
+		{ "__index", lua_mysqld_binlog_tablemap_event_get },
+		{ NULL, NULL },
+	};
+	return proxy_getmetatable(L, methods);
+}
+
+int lua_mysqld_binlog_tablemap_event_push(lua_State *L, network_mysqld_binlog_event *udata) {
+	network_mysqld_binlog_event **_udata;
+
+	if (!udata) {
+		return 0;
+	}
+
+	_udata = lua_newuserdata(L, sizeof(*_udata));
+	*_udata = udata;
+
+	lua_mysqld_binlog_tablemap_event_getmetatable(L);
+	lua_setmetatable(L, -2); /* tie the metatable to the table   (sp -= 1) */
+
+	return 1;
+}
+
 
 static int lua_mysqld_binlog_format_event_get(lua_State *L) {
 	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)luaL_checkself(L);
@@ -283,6 +522,14 @@ static int lua_mysqld_binlog_event_get(lua_State *L) {
 		return lua_mysqld_binlog_format_event_push(L, event);
 	}
 
+	if (strleq(C("table_map"), key, keysize)) {
+		return lua_mysqld_binlog_tablemap_event_push(L, event);
+	}
+
+	if (strleq(C("rbr"), key, keysize)) {
+		return lua_mysqld_binlog_rows_event_push(L, event);
+	}
+
 	return 0;
 }
 
@@ -390,10 +637,46 @@ static int lua_mysqld_binlog_close(lua_State *L) {
 	return 0;
 }
 
+/**
+ * register the table that is tracked with the table-map event
+ *
+ * FIXME: should also take a lua-table as parameter
+ */
+static int lua_mysqld_binlog_tablemap_register(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)lua_touserdata(L, 2);
+	network_mysqld_table *tbl = network_mysqld_table_new();
+
+	network_mysqld_binlog_event_tablemap_get(event, tbl);
+	
+	g_hash_table_insert(binlog->rbr_tables, guint64_new(tbl->table_id), tbl);
+
+	return 0;
+}
+
+/**
+ * get the table definition referenced by the table-id 
+ */
+static int lua_mysqld_binlog_tablemap_get(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	guint64 tbl_id = (guint64)luaL_checknumber(L, 2);
+	network_mysqld_table *tbl;
+
+	tbl = g_hash_table_lookup(binlog->rbr_tables, &(tbl_id));
+	if (!tbl) {
+		lua_pushnil(L);
+		return 1;
+	}
+
+	return lua_mysqld_table_push(L, tbl);
+}
+
 int lua_mysqld_binlog_getmetatable(lua_State *L) {
 	static const struct luaL_reg methods[] = {
 		{ "next", lua_mysqld_binlog_next },
 		{ "close", lua_mysqld_binlog_close },
+		{ "table_register", lua_mysqld_binlog_tablemap_register },
+		{ "table_get", lua_mysqld_binlog_tablemap_get },
 		{ NULL, NULL },
 	};
 	return proxy_getmetatable(L, methods);
