@@ -806,6 +806,34 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 
 		lua_pop(L, 1);
 		break;
+	case INTVAR_EVENT:
+		lua_getfield(L, 2, "intvar");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a INTVAR_EVENT needs a .intvar table");
+		}
+
+		lua_getfield(L, -1, "type");
+		if (lua_isnumber(L, -1)) {
+			event->event.intvar.type = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".type can't be nil");
+		} else {
+			luaL_error(L, ".type has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "value");
+		if (lua_isnumber(L, -1)) {
+			event->event.intvar.value = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".value can't be nil");
+		} else {
+			luaL_error(L, ".value has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_pop(L, 1);
+		break;
 
 	}
 

@@ -340,6 +340,11 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 	case XID_EVENT:
 		network_mysqld_proto_append_int64(packet, event->event.xid.xid_id);
 		break;
+	case INTVAR_EVENT:
+		network_mysqld_proto_append_int8(packet, event->event.intvar.type);
+		network_mysqld_proto_append_int64(packet, event->event.intvar.value);
+
+		break;
 	default:
 		g_critical("%s", G_STRLOC);
 		return -1;

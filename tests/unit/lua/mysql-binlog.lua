@@ -50,6 +50,27 @@ assert(f:append({
 }))
 
 assert(f:append({
+	server_id = 1,
+	type = "INTVAR_EVENT",
+	intvar = {
+		type = 1,
+		value = 1
+	}
+}))
+
+assert(f:append({
+	server_id = 1,
+	type = "INTVAR_EVENT",
+	intvar = {
+		type = 2,
+		value = 1
+	}
+}))
+
+
+
+
+assert(f:append({
 	-- timestamp defaults to _now_,
 	server_id = 1,
 	type = "QUERY_EVENT",
@@ -62,7 +83,6 @@ assert(f:append({
 		query = "SELECT 1"
 	}
 }))
-
 
 assert(f:append({
 	server_id = 1,
