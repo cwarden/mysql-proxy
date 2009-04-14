@@ -35,6 +35,7 @@ typedef struct {
 	union {
 		guint64 i;
 		gchar *s;
+		gdouble f;
 	} data;
 	guint64 data_len;
 

@@ -16,6 +16,8 @@
 
  $%ENDLICENSE%$ */
 
+#include <string.h>
+
 #include "glib-ext.h"
 #include "network-mysqld-myisam.h"
 
@@ -84,10 +86,21 @@ int network_mysqld_proto_get_myisam_field(network_packet *packet,
 	guint16 i16;
 	guint32 i32;
 	guint64 i64;
+	double  d;
 	network_mysqld_column *column = field->column;
 	int err = 0;
 
 	switch ((guchar)column->type) {
+	case MYSQL_TYPE_DOUBLE:
+		/* a DOUBLE is stored in IEEE notation by just copying all 8 bytes */
+		err = err || (column->max_length != 8); /* has to be 8 bytes */
+		err = err || (packet->offset + 8 > packet->data->len);
+		if (!err) {
+			memcpy(&d, packet->data->str + packet->offset, 8);
+			err = err || network_mysqld_proto_skip(packet, 8);
+		}
+		if (!err) field->data.f = d;
+		break;
 	case MYSQL_TYPE_TIMESTAMP: /* int4store */
 	case MYSQL_TYPE_LONG:
 		err = err || network_mysqld_proto_get_int32(packet, &i32);
