@@ -331,6 +331,14 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 		}
 		g_string_append_c(packet, '\0');
 		g_string_append(packet, event->event.query_event.query);
+
+		g_debug_hexdump(G_STRLOC, S(packet));
+		break;
+	case STOP_EVENT:
+		/* no data to write */
+		break;
+	case XID_EVENT:
+		network_mysqld_proto_append_int64(packet, event->event.xid.xid_id);
 		break;
 	default:
 		g_critical("%s", G_STRLOC);

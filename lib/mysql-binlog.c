@@ -760,8 +760,53 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		}
 		lua_pop(L, 1);
 
+		lua_getfield(L, -1, "db_name");
+		if (lua_isstring(L, -1)) {
+			size_t s_len;
+			const char *s;
+
+			s = lua_tolstring(L, -1, &s_len);
+
+			if (s_len >= 255) {
+				luaL_error(L, ".db_name can only be 255 char max");
+			}
+
+			if (event->event.query_event.db_name) g_free(event->event.query_event.db_name);
+			event->event.query_event.db_name = g_strdup(s);
+			event->event.query_event.db_name_len = s_len;
+		} else if (lua_isnil(L, -1)) {
+			if (event->event.query_event.db_name) g_free(event->event.query_event.db_name);
+			event->event.query_event.db_name = NULL;
+			event->event.query_event.db_name_len = 0;
+		} else {
+			luaL_error(L, ".db_name has to be a string");
+		}
+		lua_pop(L, 1);
+
 		lua_pop(L, 1);
 		break;
+	case STOP_EVENT:
+		/* no data */
+		break;
+	case XID_EVENT:
+		lua_getfield(L, 2, "xid");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a XID_EVENT needs a .xid table");
+		}
+
+		lua_getfield(L, -1, "xid_id");
+		if (lua_isnumber(L, -1)) {
+			event->event.xid.xid_id = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".query can't be nil");
+		} else {
+			luaL_error(L, ".query has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_pop(L, 1);
+		break;
+
 	}
 
 	if (network_mysqld_binlog_append(binlog, event)) {

@@ -48,6 +48,36 @@ assert(f:append({
 		query = "SELECT 1"
 	}
 }))
+
+assert(f:append({
+	-- timestamp defaults to _now_,
+	server_id = 1,
+	type = "QUERY_EVENT",
+	-- log_pos is maintained automaticly
+	-- flags defaults to 0
+	-- event_size is maintained automaticly
+	query = {
+		thread_id = 1,
+		db_name = "test",
+		query = "SELECT 1"
+	}
+}))
+
+
+assert(f:append({
+	server_id = 1,
+	type = "XID_EVENT",
+	xid = {
+		xid_id = 42
+	}
+}))
+
+assert(f:append({
+	server_id = 1,
+	type = "STOP_EVENT",
+}))
+
+
 f:close()
 
 local f = assert(binlog.open("/tmp/binlog-test.log"))
