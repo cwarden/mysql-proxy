@@ -798,9 +798,9 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		if (lua_isnumber(L, -1)) {
 			event->event.xid.xid_id = lua_tonumber(L, -1);
 		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".query can't be nil");
+			luaL_error(L, ".xid_id can't be nil");
 		} else {
-			luaL_error(L, ".query has to be a string");
+			luaL_error(L, ".xid_id has to be a string");
 		}
 		lua_pop(L, 1);
 
