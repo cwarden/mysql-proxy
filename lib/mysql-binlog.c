@@ -596,11 +596,18 @@ static int lua_mysqld_binlog_next_event(lua_State *L) {
 	event = network_mysqld_binlog_event_new();
 	network_mysqld_proto_get_binlog_event_header(packet, event);
 
-	if (event->event_size < 19 ||
-	    iter->off + event->event_size != event->log_pos) {
+	if (event->event_size < 19) {
+		g_critical("%s: event-size = %ld, expected = %"G_GUINT32_FORMAT,
+			G_STRLOC,
+			event->event_size,
+			19);
+		return 0;
+	}
+
+	if (iter->off + event->event_size != event->log_pos) {
 		g_critical("%s: binlog-pos=%lld is invalid, expected = %"G_GUINT32_FORMAT,
 			G_STRLOC,
-			iter->off,
+			iter->off + event->event_size,
 			event->log_pos);
 		return 0;
 	}
@@ -637,6 +644,135 @@ static int lua_mysqld_binlog_next(lua_State *L) {
 
 	return 1;
 }
+
+/**
+ */
+static int lua_mysqld_binlog_append(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	network_mysqld_binlog_event *event;
+	GString *packet;
+
+	luaL_checktype(L, 2, LUA_TTABLE);
+
+	event = network_mysqld_binlog_event_new();
+
+	/* server_id */
+	lua_getfield(L, 2, "server_id");
+	if (lua_isnumber(L, -1)) {
+		event->server_id = lua_tonumber(L, -1);
+	} else if (lua_isnil(L, -1)) {
+		event->server_id = 1;
+	} else {
+		return luaL_error(L, ".server_id has to be a number");
+	}
+	lua_pop(L, 1);
+
+	/* server_id */
+	lua_getfield(L, 2, "timestamp");
+	if (lua_isnumber(L, -1)) {
+		event->timestamp = lua_tonumber(L, -1);
+	} else if (lua_isnil(L, -1)) {
+		event->timestamp = time(NULL);
+	} else {
+		return luaL_error(L, ".timestamp has to be a number");
+	}
+	lua_pop(L, 1);
+
+	/* "type" is string that we have to map back to the number */
+	lua_getfield(L, 2, "type");
+	if (lua_isstring(L, -1)) {
+		size_t event_type_len;
+		const char *event_type = lua_tolstring(L, -1, &event_type_len);
+
+		event->event_type = network_mysqld_binlog_event_get_id(event_type, event_type_len);
+
+		if (event->event_type == UNKNOWN_EVENT) {
+			return luaL_error(L, ".type=%s isn't a known event", event_type);
+		}
+	} else if (lua_isnumber(L, -1)) {
+		event->event_type = lua_tonumber(L, -1);
+	} else {
+		return luaL_error(L, ".server_id has to be a number");
+	}
+	lua_pop(L, 1);
+
+	switch (event->event_type) {
+	case FORMAT_DESCRIPTION_EVENT:
+		lua_getfield(L, 2, "format");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a FORMAT_DESCRIPTION_EVENT needs a .format table");
+		}
+
+		lua_getfield(L, -1, "master_version");
+		if (lua_isstring(L, -1)) {
+			if (event->event.format_event.master_version) g_free(event->event.format_event.master_version);
+			event->event.format_event.master_version = g_strdup(lua_tostring(L, -1));
+		} else if (lua_isnil(L, -1)) {
+			if (event->event.format_event.master_version) g_free(event->event.format_event.master_version);
+			event->event.format_event.master_version = g_strdup("mysql-proxy-0.7.0");
+		} else {
+			luaL_error(L, ".master_version has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "binlog_version");
+		if (lua_isnumber(L, -1)) {
+			event->event.format_event.binlog_version = lua_tointeger(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			event->event.format_event.binlog_version = 4;
+		} else {
+			luaL_error(L, ".binlog_version has to be a number");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "created_ts");
+		if (lua_isnumber(L, -1)) {
+			event->event.format_event.created_ts = lua_tointeger(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			event->event.format_event.created_ts = time(NULL);
+		} else {
+			luaL_error(L, ".created_ts has to be a number");
+		}
+		lua_pop(L, 1);
+
+		event->event.format_event.log_header_len = 19;
+
+		event->event.format_event.event_header_sizes_len = ENUM_END_EVENT - 1;
+		event->event.format_event.event_header_sizes = g_new0(guint8, event->event.format_event.event_header_sizes_len);
+		event->event.format_event.event_header_sizes[0] = 1;
+
+		lua_pop(L, 1);
+		break;
+	case QUERY_EVENT:
+		lua_getfield(L, 2, "query");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a QUERY_EVENT needs a .query table");
+		}
+
+		lua_getfield(L, -1, "query");
+		if (lua_isstring(L, -1)) {
+			if (event->event.query_event.query) g_free(event->event.query_event.query);
+			event->event.query_event.query = g_strdup(lua_tostring(L, -1));
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".query can't be nil");
+		} else {
+			luaL_error(L, ".query has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_pop(L, 1);
+		break;
+	}
+
+	if (network_mysqld_binlog_append(binlog, event)) {
+		return luaL_error(L, "appending event to stream failed");
+	}
+
+	lua_pushboolean(L, 1);
+
+	return 1;
+}
+
 
 static int lua_mysqld_binlog_close(lua_State *L) {
 	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
@@ -683,6 +819,7 @@ static int lua_mysqld_binlog_tablemap_get(lua_State *L) {
 int lua_mysqld_binlog_getmetatable(lua_State *L) {
 	static const struct luaL_reg methods[] = {
 		{ "next", lua_mysqld_binlog_next },
+		{ "append", lua_mysqld_binlog_append },
 		{ "close", lua_mysqld_binlog_close },
 		{ "table_register", lua_mysqld_binlog_tablemap_register },
 		{ "table_get", lua_mysqld_binlog_tablemap_get },
@@ -719,10 +856,11 @@ static int lua_mysqld_binlog_new (lua_State *L) {
 static int lua_mysqld_binlog_open (lua_State *L) {
 	network_mysqld_binlog *udata;
 	const char *filename = luaL_checkstring(L, 1);
+	const char *mode     = luaL_optstring(L, 2, "r");
 
 	udata = network_mysqld_binlog_new();
 
-	if (network_mysqld_binlog_open(udata, filename)) {
+	if (network_mysqld_binlog_open(udata, filename, mode)) {
 		lua_pushnil(L);
 		lua_pushstring(L, "opening file failed");
 		
@@ -731,7 +869,6 @@ static int lua_mysqld_binlog_open (lua_State *L) {
 
 	return lua_mysqld_binlog_push(L, udata);
 }
-
 
 /*
 ** Assumes the table is on top of the stack.

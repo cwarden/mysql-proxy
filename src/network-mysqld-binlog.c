@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -74,37 +75,129 @@ void network_mysqld_binlog_free(network_mysqld_binlog *binlog) {
 	g_free(binlog);
 }
 
-int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename) {
+/**
+ * open a binlog-file for reading or writing 
+ *
+ * @param mode 'r' or 'w'
+ */
+int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename, const char *mode_str) {
 	char binlog_header[4];
 
-	if (-1 == (binlog->fd = g_open(filename, O_RDONLY, 0))) {
-		g_critical("%s: opening '%s' failed: %s",
-				G_STRLOC,
-				filename,
-				g_strerror(errno));
+	if (0 == strcmp(mode_str, "r")) {
+		binlog->mode = O_RDONLY;
+	} else if (0 == strcmp(mode_str, "w")) {
+		binlog->mode = O_WRONLY;
+	} else {
 		return -1;
 	}
 
-	if (4 != read(binlog->fd, binlog_header, 4)) {
-		g_return_val_if_reached(-1);
+	if (binlog->mode == O_RDONLY) {
+		if (-1 == (binlog->fd = g_open(filename, O_RDONLY, 0))) {
+			g_critical("%s: opening '%s' failed: %s",
+					G_STRLOC,
+					filename,
+					g_strerror(errno));
+			return -1;
+		}
+
+		if (4 != read(binlog->fd, binlog_header, 4)) {
+			g_return_val_if_reached(-1);
+		}
+
+		if (binlog_header[0] != '\xfe' ||
+		    binlog_header[1] != 'b' ||
+		    binlog_header[2] != 'i' ||
+		    binlog_header[3] != 'n') {
+
+			g_critical("%s: binlog-header should be: %02x%02x%02x%02x, got %02x%02x%02x%02x",
+					G_STRLOC,
+					'\xfe', 'b', 'i', 'n',
+					binlog_header[0],
+					binlog_header[1],
+					binlog_header[2],
+					binlog_header[3]
+					);
+
+			g_return_val_if_reached(-1);
+		}
+	} else {
+		if (-1 == (binlog->fd = g_open(filename, O_WRONLY | O_TRUNC | O_APPEND, S_IRUSR | S_IWUSR))) {
+			g_critical("%s: opening '%s' failed: %s",
+					G_STRLOC,
+					filename,
+					g_strerror(errno));
+			return -1;
+		}
+		binlog_header[0] = '\xfe';
+		binlog_header[1] = 'b';
+		binlog_header[2] = 'i';
+		binlog_header[3] = 'n';
+
+		if (4 != write(binlog->fd, binlog_header, 4)) {
+			g_return_val_if_reached(-1);
+		}
+		binlog->log_pos = 4;
 	}
 
-	if (binlog_header[0] != '\xfe' ||
-	    binlog_header[1] != 'b' ||
-	    binlog_header[2] != 'i' ||
-	    binlog_header[3] != 'n') {
+	return 0;
+}
 
-		g_critical("%s: binlog-header should be: %02x%02x%02x%02x, got %02x%02x%02x%02x",
+int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_binlog_event *event) {
+	GString *packet, *header;
+	ssize_t r;
+
+	if (binlog->mode != O_WRONLY) {
+		g_critical("%s", G_STRLOC);
+		return -1;
+	}
+
+	packet = g_string_new(NULL);
+	if (network_mysqld_proto_append_binlog_event(packet, event)) {
+		g_critical("%s", G_STRLOC);
+		g_string_free(packet, TRUE);
+		return -1;
+	}
+	
+	event->event_size = 19 /* the header */ + packet->len;
+	event->log_pos = binlog->log_pos + event->event_size;
+	
+	header = g_string_new(NULL);
+	if (network_mysqld_proto_append_binlog_event_header(header, event)) {
+		g_critical("%s", G_STRLOC);
+		g_string_free(packet, TRUE);
+		g_string_free(header, TRUE);
+		return -1;
+	}
+	
+	r = write(binlog->fd, header->str, header->len);
+	if (r < 0) {
+		g_critical("%s", G_STRLOC);
+		return -1;
+	} else if (r < header->len) {
+		g_critical("%s: wrote = %d, wanted to write: %d", 
 				G_STRLOC,
-				'\xfe', 'b', 'i', 'n',
-				binlog_header[0],
-				binlog_header[1],
-				binlog_header[2],
-				binlog_header[3]
-				);
-
-		g_return_val_if_reached(-1);
+				r,
+				header->len);
+		return -1;
 	}
+	
+	g_string_free(header, TRUE);
+
+	r = write(binlog->fd, packet->str, packet->len);
+
+	g_string_free(packet, TRUE);
+
+	if (r < 0) {
+		g_critical("%s", G_STRLOC);
+		return -1;
+	} else if (r < packet->len) {
+		g_critical("%s: wrote = %d, wanted to write: %d", 
+				G_STRLOC,
+				r,
+				packet->len);
+		return -1;
+	}
+	binlog->log_pos = event->log_pos;
 
 	return 0;
 }
@@ -176,6 +269,77 @@ int network_mysqld_proto_get_binlog_event_header(network_packet *packet, network
 	return err ? -1 : 0;
 }
 
+int network_mysqld_proto_append_binlog_event_header(GString *packet, network_mysqld_binlog_event *event) {
+	/* write the normal event header */
+	network_mysqld_proto_append_int32(packet, event->timestamp);
+	network_mysqld_proto_append_int8(packet, (guint8)event->event_type);
+	network_mysqld_proto_append_int32(packet, event->server_id);
+	network_mysqld_proto_append_int32(packet, event->event_size);
+	network_mysqld_proto_append_int32(packet, event->log_pos);
+	network_mysqld_proto_append_int16(packet, event->flags);
+
+	return 0;
+}
+
+int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_binlog_event *event) {
+	guint i;
+	
+	switch ((guchar)event->event_type) {
+	case FORMAT_DESCRIPTION_EVENT:
+		g_return_val_if_fail (event->event.format_event.binlog_version == 4, -1);
+		g_return_val_if_fail (event->event.format_event.master_version != NULL, -1);
+		g_return_val_if_fail (event->event.format_event.event_header_sizes_len != 0, -1);
+		g_return_val_if_fail (event->event.format_event.log_header_len == 19, -1);
+
+		network_mysqld_proto_append_int16(packet, event->event.format_event.binlog_version); /* should be 4 */
+
+		/* the master-version is a 50byte char-string
+		 *
+		 * if the string is shorter, the rest has to be filled up with 0x00
+		 */
+		i = strlen(event->event.format_event.master_version);
+		g_return_val_if_fail(i > 0, -1);
+
+		g_string_append_len( /* NUL-term string */
+				packet, 
+				event->event.format_event.master_version,
+				i);
+		while (i++ < 50) g_string_append_c(packet, 0x00);
+
+		network_mysqld_proto_append_int32(packet, 
+				event->event.format_event.created_ts);
+
+		network_mysqld_proto_append_int8(packet, event->event.format_event.log_header_len);
+
+		/* the event headers */
+		for (i = 0; i < event->event.format_event.event_header_sizes_len; i++) {
+			network_mysqld_proto_append_int8(packet, event->event.format_event.event_header_sizes[i]);
+		}
+
+		break;
+	case QUERY_EVENT:
+		g_return_val_if_fail (event->event.query_event.query != NULL, -1);
+
+		network_mysqld_proto_append_int32(packet, event->event.query_event.thread_id);
+		network_mysqld_proto_append_int32(packet, event->event.query_event.exec_time);
+		network_mysqld_proto_append_int8(packet, event->event.query_event.db_name_len);
+		network_mysqld_proto_append_int16(packet, event->event.query_event.error_code);
+
+		network_mysqld_proto_append_int16(packet, 0); /* var-size attributes */
+		if (event->event.query_event.db_name_len) {
+			g_string_append_len(packet, event->event.query_event.db_name, event->event.query_event.db_name_len);
+		}
+		g_string_append_c(packet, '\0');
+		g_string_append(packet, event->event.query_event.query);
+		break;
+	default:
+		g_critical("%s", G_STRLOC);
+		return -1;
+	}
+
+	return 0;
+}
+
 int network_mysqld_proto_get_binlog_event(network_packet *packet, 
 		network_mysqld_binlog G_GNUC_UNUSED *binlog,
 		network_mysqld_binlog_event *event) {
@@ -224,6 +388,7 @@ int network_mysqld_proto_get_binlog_event(network_packet *packet,
 		break;
 	case FORMAT_DESCRIPTION_EVENT:
 		err = err || network_mysqld_proto_get_int16(packet, &event->event.format_event.binlog_version);
+		g_assert_cmpint(event->event.format_event.binlog_version, ==, 4);
 		err = err || network_mysqld_proto_get_string_len( /* NUL-term string */
 				packet, 
 				&event->event.format_event.master_version,
@@ -235,13 +400,17 @@ int network_mysqld_proto_get_binlog_event(network_packet *packet,
 		err = err || network_mysqld_proto_get_int8(packet, &event->event.format_event.log_header_len);
 		g_assert_cmpint(event->event.format_event.log_header_len, ==, 19);
 
-		/* there is some funky event-permutation going on */
-		event->event.format_event.perm_events_len = packet->data->len - packet->offset;
+		/* fixed length of all events after the initial header
+		 *
+		 * for a FORMAT_DESCRIPTION_EVENT it is:
+		 *   56 = 2 + 50 + 4
+		 * */
+		event->event.format_event.event_header_sizes_len = packet->data->len - packet->offset;
 		err = err || network_mysqld_proto_get_string_len(
 				packet, 
-				&event->event.format_event.perm_events,
+				&event->event.format_event.event_header_sizes,
 				packet->data->len - packet->offset);
-		
+
 		break;
 	case USER_VAR_EVENT:
 		err = err || network_mysqld_proto_get_int32(
@@ -399,7 +568,7 @@ void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event) {
 		break;
 	case FORMAT_DESCRIPTION_EVENT:
 		if (event->event.format_event.master_version) g_free(event->event.format_event.master_version);
-		if (event->event.format_event.perm_events) g_free(event->event.format_event.perm_events);
+		if (event->event.format_event.event_header_sizes) g_free(event->event.format_event.event_header_sizes);
 		break;
 	case USER_VAR_EVENT:
 		if (event->event.user_var_event.name) g_free(event->event.user_var_event.name);
@@ -428,8 +597,9 @@ void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event) {
 struct {
 	enum Log_event_type type;
 	const char *name;
+	size_t name_len;
 } event_type_name[] = {
-#define V(x) x, #x
+#define V(x) x, #x, sizeof(#x) - 1
 	{ V(UNKNOWN_EVENT) },
 	{ V(START_EVENT_V3) },
 	{ V(QUERY_EVENT) },
@@ -459,11 +629,11 @@ struct {
 	{ V(INCIDENT_EVENT) },
 
 #undef V
-	{ 0, NULL }
+	{ 0, NULL, 0 }
 };
 
 const char *network_mysqld_binlog_event_get_name(network_mysqld_binlog_event *event) {
-	static const char *unknown_type = "UNKNOWN";
+	const char *unknown_type = event_type_name[0].name;
 	enum Log_event_type type = event->event_type;
 	guint i;
 
@@ -478,6 +648,18 @@ const char *network_mysqld_binlog_event_get_name(network_mysqld_binlog_event *ev
 	return unknown_type;
 }
 
+/**
+ * map a string back to a id 
+ */
+int network_mysqld_binlog_event_get_id(const char *key, size_t key_len) {
+	guint i;
+
+	for (i = 0; event_type_name[i].name; i++) {
+		if (strleq(key, key_len, event_type_name[i].name, event_type_name[i].name_len)) return event_type_name[i].type;
+	}
+
+	return UNKNOWN_EVENT;
+}
 
 network_mysqld_binlog_dump *network_mysqld_binlog_dump_new() {
 	network_mysqld_binlog_dump *dump;

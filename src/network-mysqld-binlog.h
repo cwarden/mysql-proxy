@@ -101,7 +101,10 @@ NETWORK_API guint64 *guint64_new(guint64 i);
 
 typedef struct {
 	int fd;
+	guint32 log_pos; /* current write-log-pos */
+
 	gchar *filename;
+	int mode;
 
 	/* we have to store some information from the format description event 
 	 */
@@ -141,8 +144,8 @@ typedef struct {
 			gchar *master_version;
 			guint32 created_ts;
 			guint8  log_header_len;
-			gchar *perm_events;
-			gsize  perm_events_len;
+			gchar *event_header_sizes;
+			gsize  event_header_sizes_len;
 		} format_event;
 		struct {
 			guint32 name_len;
@@ -206,16 +209,20 @@ typedef struct {
 NETWORK_API network_mysqld_binlog_event *network_mysqld_binlog_event_new(void);
 NETWORK_API void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event);
 NETWORK_API const char *network_mysqld_binlog_event_get_name(network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_binlog_event_get_id(const char *key, size_t key_len);
 NETWORK_API int network_mysqld_proto_get_binlog_event_header(network_packet *packet, network_mysqld_binlog_event *event);
 NETWORK_API int network_mysqld_proto_get_binlog_event(network_packet *packet, 
 		network_mysqld_binlog *binlog,
 		network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_proto_append_binlog_event_header(GString *packet, network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_binlog_event *event);
 NETWORK_API int network_mysqld_proto_get_binlog_status(network_packet *packet);
-NETWORK_API int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename);
+NETWORK_API int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename, const char *mode);
 NETWORK_API int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, network_packet *packet);
 NETWORK_API int network_mysqld_binlog_read_event(network_mysqld_binlog *binlog, 
 		network_packet *packet,
 		goffset event_size);
+NETWORK_API int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_binlog_event *event);
 
 typedef struct {
 	gchar *binlog_file;

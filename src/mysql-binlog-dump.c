@@ -433,7 +433,7 @@ int replicate_binlog_dump_file(
 	int ret = 0;
 
 	binlog = network_mysqld_binlog_new();
-	if (network_mysqld_binlog_open(binlog, filename)) {
+	if (network_mysqld_binlog_open(binlog, filename, "r")) {
 		return -1;
 	}
 
