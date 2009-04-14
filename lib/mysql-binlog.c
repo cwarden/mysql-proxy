@@ -92,41 +92,12 @@ static int network_mysqld_binlog_get_myisam_row(network_packet *packet,
 	return err;
 }
 
-static int lua_mysqld_binlog_rows_event_next_iter(lua_State *L) {
-	network_mysqld_binlog_rows_event_iter *iter = (network_mysqld_binlog_rows_event_iter *)lua_touserdata(L, lua_upvalueindex(1));
-	network_mysqld_binlog_event *event = iter->event;
-	network_mysqld_table *tbl = iter->table;
-	network_packet *packet = &(iter->row_packet);
-
-	/* get a row from the current packet */
-	network_mysqld_myisam_row *pre_fields, *post_fields = NULL;
-	int err = 0;
+static int lua_mysqld_binlog_rows_event_push_row(lua_State *L, network_mysqld_myisam_row *row) {
 	gsize i;
 
-	/* check if all data is parsed */
-	if (packet->offset >= packet->data->len) return 0;
-
-	pre_fields = network_mysqld_myisam_row_new();
-
-	err = err || network_mysqld_binlog_get_myisam_row(packet, 
-			tbl,
-			pre_fields, 
-			event->event.row_event.null_bits_len);
-
-	if (event->event_type == UPDATE_ROWS_EVENT) {
-		post_fields = network_mysqld_myisam_row_new();
-
-		err = err || network_mysqld_binlog_get_myisam_row(packet, 
-				tbl,
-				post_fields, 
-				event->event.row_event.null_bits_len);
-	}
-
-	/* push a pre and a post table */
 	lua_newtable(L);
-	lua_newtable(L);
-	for (i = 0; i < pre_fields->fields->len; i++) {
-		network_mysqld_myisam_field *field = pre_fields->fields->pdata[i];
+	for (i = 0; i < row->fields->len; i++) {
+		network_mysqld_myisam_field *field = row->fields->pdata[i];
 
 		lua_pushinteger(L, i + 1);
 		if (field->is_null) {
@@ -169,9 +140,47 @@ static int lua_mysqld_binlog_rows_event_next_iter(lua_State *L) {
 
 		lua_settable(L, -3);
 	}
-	lua_setfield(L, -2, "before");
+
+	return 1;
+}
+
+static int lua_mysqld_binlog_rows_event_next_iter(lua_State *L) {
+	network_mysqld_binlog_rows_event_iter *iter = (network_mysqld_binlog_rows_event_iter *)lua_touserdata(L, lua_upvalueindex(1));
+	network_mysqld_binlog_event *event = iter->event;
+	network_mysqld_table *tbl = iter->table;
+	network_packet *packet = &(iter->row_packet);
+
+	/* get a row from the current packet */
+	network_mysqld_myisam_row *pre_fields, *post_fields = NULL;
+	int err = 0;
+
+	/* check if all data is parsed */
+	if (packet->offset >= packet->data->len) return 0;
+
+	pre_fields = network_mysqld_myisam_row_new();
+
+	err = err || network_mysqld_binlog_get_myisam_row(packet, 
+			tbl,
+			pre_fields, 
+			event->event.row_event.null_bits_len);
+
+	if (event->event_type == UPDATE_ROWS_EVENT) {
+		post_fields = network_mysqld_myisam_row_new();
+
+		err = err || network_mysqld_binlog_get_myisam_row(packet, 
+				tbl,
+				post_fields, 
+				event->event.row_event.null_bits_len);
+	}
+
+	/* push a pre and a post table */
 	lua_newtable(L);
-	lua_setfield(L, -2, "after");
+	lua_mysqld_binlog_rows_event_push_row(L, pre_fields);
+	lua_setfield(L, -2, "before");
+	if (post_fields) {
+		lua_mysqld_binlog_rows_event_push_row(L, post_fields);
+		lua_setfield(L, -2, "after");
+	}
 
 	return 1;
 }

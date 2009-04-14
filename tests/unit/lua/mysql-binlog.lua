@@ -17,7 +17,7 @@
  $%ENDLICENSE%$ --]]
 local binlog = assert(require("mysql.binlog"))
 local basedir = "/usr/local/mysql/data/"
-local file    = "jan-kneschkes-macbook-pro-bin.001005"
+local file    = "jan-kneschkes-macbook-pro-bin.001014"
 
 while file do
 	local f = assert(binlog.open(basedir .. file))
@@ -42,9 +42,9 @@ while file do
 		elseif event.type == "ROTATE_EVENT" then
 			assert(event.rotate.binlog_file)
 			assert(event.rotate.binlog_pos)
-			print(("rotate to: %d: %s"):format(event.rotate.binlog_pos, event.rotate.binlog_file))
+			print(("next binlog is: %d: %s"):format(event.rotate.binlog_pos, event.rotate.binlog_file))
 			--
-			file = event.rotate.binlog_file
+			-- file = event.rotate.binlog_file
 		elseif event.type == "XID_EVENT" then
 			assert(event.xid.xid_id)
 		elseif event.type == "INTVAR_EVENT" then
@@ -65,19 +65,24 @@ while file do
 			assert(event.table_map.db_name)
 			assert(event.table_map.table_name)
 			-- print(("tablemap: %d, %d, %s::%s"):format(event.table_map.table_id, event.table_map.flags, event.table_map.db_name, event.table_map.table_name))
-		elseif event.type == "DELETE_ROWS_EVENT" then
+		elseif event.type == "DELETE_ROWS_EVENT" or event.type == "UPDATE_ROWS_EVENT" or event.type == "WRITE_ROWS_EVENT" then
 			local tbl = f:table_get(event.rbr.table_id)
 
 			assert(event.rbr.table_id)
 			assert(event.rbr.flags)
-			print(("delete-row: table=%d (%s), flags=%d"):format(event.rbr.table_id, tbl.table_name, event.rbr.flags))
+			print(("RBR: [%s] table=%d (%s), flags=%d"):format(event.type, event.rbr.table_id, tbl.table_name, event.rbr.flags))
 
 			for row in event.rbr:next(tbl) do
-				for field_ndx, field in ipairs(row.before) do
-					print(("[%d] %s"):format(field_ndx, field))
+				print(" row")
+				local before = row.before
+				local after  = row.after
+				for field_ndx, field in ipairs(before) do
+					print(("  before [%d] %s"):format(field_ndx, field))
 				end
-				for field_ndx, field in ipairs(row.after) do
-					print(("%d"):format(field_ndx))
+				if after then
+					for field_ndx, field in ipairs(after) do
+						print(("  after [%d] %s"):format(field_ndx, field))
+					end
 				end
 			end
 		else
