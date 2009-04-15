@@ -918,6 +918,44 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 
 		lua_pop(L, 1);
 		break;
+	case INCIDENT_EVENT:
+		lua_getfield(L, 2, "incident");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a INCIDENT_EVENT needs a .incident table");
+		}
+
+		lua_getfield(L, -1, "incident");
+		if (lua_isnumber(L, -1)) {
+			event->event.incident.incident_id = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".incident can't be nil");
+		} else {
+			luaL_error(L, ".incident has to be a number");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "message");
+		if (lua_isstring(L, -1)) {
+			size_t s_len;
+			const char *s;
+
+			s = lua_tolstring(L, -1, &s_len);
+
+			if (s_len >= 255) {
+				luaL_error(L, ".message can only be 255 char max");
+			}
+			if (event->event.incident.message) g_free(event->event.incident.message);
+			event->event.incident.message = g_strdup(s);
+			event->event.incident.message_len = s_len;
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".message can't be nil");
+		} else {
+			luaL_error(L, ".message has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_pop(L, 1);
+		break;
 
 	}
 

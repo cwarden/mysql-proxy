@@ -366,6 +366,16 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 				event->event.user_var_event.value_len);
 
 		break;
+	case INCIDENT_EVENT:
+		network_mysqld_proto_append_int16(packet,
+				event->event.incident.incident_id);
+		network_mysqld_proto_append_int8(packet,
+				event->event.incident.message_len);
+		g_string_append_len(packet, 
+				event->event.incident.message, 
+				event->event.incident.message_len);
+
+		break;
 	default:
 		g_critical("%s", G_STRLOC);
 		return -1;
@@ -576,6 +586,15 @@ int network_mysqld_proto_get_binlog_event(network_packet *packet,
 	case XID_EVENT:
 		err = err || network_mysqld_proto_get_int64(packet,
 				&event->event.xid.xid_id);
+		break;
+	case INCIDENT_EVENT:
+		err = err || network_mysqld_proto_get_int16(packet,
+				&event->event.incident.incident_id);
+		err = err || network_mysqld_proto_get_int8(packet,
+				&event->event.incident.message_len);
+		err = err || network_mysqld_proto_get_string_len(packet,
+				&event->event.incident.message,
+				event->event.incident.message_len);
 		break;
 	default:
 		g_critical("%s: unhandled binlog-event: %d", 

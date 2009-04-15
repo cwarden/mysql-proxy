@@ -45,7 +45,8 @@ assert(f:append({
 		thread_id = 1,
 		-- exec_time defaults to 0
 		-- error_code defaults to 0
-		query = "SELECT 1"
+		query = "SELECT 1",
+		-- the var-args are flatten out here
 	}
 }))
 
@@ -99,6 +100,16 @@ assert(f:append({
 		xid_id = 42
 	}
 }))
+
+assert(f:append({
+	server_id = 1,
+	type = "INCIDENT_EVENT",
+	incident = {
+		incident = 1,
+		message = "It's dead, Jim"
+	}
+}))
+
 
 assert(f:append({
 	server_id = 1,

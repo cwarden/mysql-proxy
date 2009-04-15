@@ -203,6 +203,11 @@ typedef struct {
 		struct {
 			guint64 xid_id;
 		} xid;
+		struct {
+			guint16 incident_id;
+			guint8 message_len;
+			gchar *message;
+		} incident;
 	} event;
 } network_mysqld_binlog_event;
 
