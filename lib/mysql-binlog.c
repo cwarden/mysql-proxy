@@ -739,7 +739,32 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 
 		event->event.format_event.event_header_sizes_len = ENUM_END_EVENT - 1;
 		event->event.format_event.event_header_sizes = g_new0(guint8, event->event.format_event.event_header_sizes_len);
-		event->event.format_event.event_header_sizes[0] = 1;
+		event->event.format_event.event_header_sizes[START_EVENT_V3 - 1] = 0x38;
+		event->event.format_event.event_header_sizes[QUERY_EVENT - 1] = 0x0d;
+		event->event.format_event.event_header_sizes[STOP_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[ROTATE_EVENT - 1] = 0x08;
+		event->event.format_event.event_header_sizes[INTVAR_EVENT -1] = 0x00;
+		event->event.format_event.event_header_sizes[LOAD_EVENT - 1] = 0x12;
+		event->event.format_event.event_header_sizes[SLAVE_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[CREATE_FILE_EVENT - 1] = 0x04;
+		event->event.format_event.event_header_sizes[APPEND_BLOCK_EVENT - 1] = 0x04;
+		event->event.format_event.event_header_sizes[EXEC_LOAD_EVENT - 1] = 0x04;
+		event->event.format_event.event_header_sizes[DELETE_FILE_EVENT - 1] = 0x04;
+		event->event.format_event.event_header_sizes[NEW_LOAD_EVENT - 1] = 0x12;
+		event->event.format_event.event_header_sizes[RAND_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[USER_VAR_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[FORMAT_DESCRIPTION_EVENT - 1] = 0x53;
+		event->event.format_event.event_header_sizes[XID_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[BEGIN_LOAD_QUERY_EVENT - 1] = 0x04;
+		event->event.format_event.event_header_sizes[EXECUTE_LOAD_QUERY_EVENT - 1] = 0x1a;
+		event->event.format_event.event_header_sizes[TABLE_MAP_EVENT - 1] = 0x08;
+		event->event.format_event.event_header_sizes[PRE_GA_WRITE_ROWS_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[PRE_GA_UPDATE_ROWS_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[PRE_GA_DELETE_ROWS_EVENT - 1] = 0x00;
+		event->event.format_event.event_header_sizes[WRITE_ROWS_EVENT - 1] = 0x08;
+		event->event.format_event.event_header_sizes[UPDATE_ROWS_EVENT - 1] = 0x08;
+		event->event.format_event.event_header_sizes[DELETE_ROWS_EVENT - 1] = 0x08;
+		event->event.format_event.event_header_sizes[INCIDENT_EVENT - 1] = 0x02;
 
 		lua_pop(L, 1);
 		break;
