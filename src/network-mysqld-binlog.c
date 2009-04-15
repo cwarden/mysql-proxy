@@ -332,7 +332,6 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 		g_string_append_c(packet, '\0');
 		g_string_append(packet, event->event.query_event.query);
 
-		g_debug_hexdump(G_STRLOC, S(packet));
 		break;
 	case STOP_EVENT:
 		/* no data to write */
@@ -343,6 +342,28 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 	case INTVAR_EVENT:
 		network_mysqld_proto_append_int8(packet, event->event.intvar.type);
 		network_mysqld_proto_append_int64(packet, event->event.intvar.value);
+
+		break;
+	case USER_VAR_EVENT:
+		network_mysqld_proto_append_int32(packet,
+				event->event.user_var_event.name_len);
+		g_string_append_len(
+				packet,
+				event->event.user_var_event.name,
+				event->event.user_var_event.name_len);
+
+		network_mysqld_proto_append_int8(packet,
+				event->event.user_var_event.is_null);
+		network_mysqld_proto_append_int8(packet,
+				event->event.user_var_event.type );
+		network_mysqld_proto_append_int32(packet,
+				event->event.user_var_event.charset);
+		network_mysqld_proto_append_int32(packet,
+				event->event.user_var_event.value_len);
+		g_string_append_len(
+				packet,
+				event->event.user_var_event.value,
+				event->event.user_var_event.value_len);
 
 		break;
 	default:

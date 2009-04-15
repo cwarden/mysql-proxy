@@ -67,8 +67,16 @@ assert(f:append({
 	}
 }))
 
-
-
+assert(f:append({
+	server_id = 1,
+	type = "USER_VAR_EVENT",
+	uservar = {
+		name = "foo",
+		value = "bar",
+		charset = 128,
+		type = 0
+	}
+}))
 
 assert(f:append({
 	-- timestamp defaults to _now_,

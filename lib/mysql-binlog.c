@@ -834,6 +834,65 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 
 		lua_pop(L, 1);
 		break;
+	case USER_VAR_EVENT:
+		lua_getfield(L, 2, "uservar");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a USER_VAR_EVENT needs a .uservar table");
+		}
+
+		lua_getfield(L, -1, "name");
+		if (lua_isstring(L, -1)) {
+			size_t s_len;
+			const char *s = lua_tolstring(L, -1, &s_len);
+
+			if (event->event.user_var_event.name) g_free(event->event.user_var_event.name);
+			event->event.user_var_event.name = g_strdup(s);
+			event->event.user_var_event.name_len = s_len;
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".name can't be nil");
+		} else {
+			luaL_error(L, ".name has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "value");
+		if (lua_isstring(L, -1)) {
+			size_t s_len;
+			const char *s = lua_tolstring(L, -1, &s_len);
+
+			if (event->event.user_var_event.value) g_free(event->event.user_var_event.value);
+			event->event.user_var_event.value = g_strdup(s);
+			event->event.user_var_event.value_len = s_len;
+		} else if (lua_isnil(L, -1)) {
+			event->event.user_var_event.is_null = 1;
+		} else {
+			luaL_error(L, ".value has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "type");
+		if (lua_isnumber(L, -1)) {
+			event->event.user_var_event.type = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".type can't be nil");
+		} else {
+			luaL_error(L, ".type has to be a string");
+		}
+		lua_pop(L, 1);
+
+		lua_getfield(L, -1, "charset");
+		if (lua_isnumber(L, -1)) {
+			event->event.user_var_event.charset = lua_tonumber(L, -1);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, ".charset can't be nil");
+		} else {
+			luaL_error(L, ".charset has to be a string");
+		}
+		lua_pop(L, 1);
+
+
+		lua_pop(L, 1);
+		break;
 
 	}
 
