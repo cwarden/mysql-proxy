@@ -121,7 +121,7 @@ int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filena
 			g_return_val_if_reached(-1);
 		}
 	} else {
-		if (-1 == (binlog->fd = g_open(filename, O_WRONLY | O_TRUNC | O_APPEND, S_IRUSR | S_IWUSR))) {
+		if (-1 == (binlog->fd = g_open(filename, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR))) {
 			g_critical("%s: opening '%s' failed: %s",
 					G_STRLOC,
 					filename,
@@ -377,7 +377,10 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 
 		break;
 	default:
-		g_critical("%s", G_STRLOC);
+		g_critical("%s: don't know how to write binlog-event %d (%s) yet", 
+				G_STRLOC,
+				event->event_type,
+				network_mysqld_binlog_event_get_name(event));
 		return -1;
 	}
 
