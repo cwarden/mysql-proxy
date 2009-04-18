@@ -89,7 +89,7 @@ assert(f:append({
 	query = {
 		thread_id = 1,
 		db_name = "test",
-		query = "SELECT 1"
+		query = "INSERT INTO tbl VALUES ( 1 )"
 	}
 }))
 
@@ -105,8 +105,8 @@ assert(f:append({
 	server_id = 1,
 	type = "INCIDENT_EVENT",
 	incident = {
-		incident = 1,
-		message = "It's dead, Jim"
+		incident = 42,
+		message = "The answer"
 	}
 }))
 
