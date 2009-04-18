@@ -652,6 +652,18 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 	network_mysqld_binlog_event *event;
 	GString *packet;
 
+	/* can take a table or a event-userdata */
+	if (lua_type(L, 2) == LUA_TUSERDATA) {
+		event = *(network_mysqld_binlog_event **)lua_touserdata(L, 2);
+
+		if (network_mysqld_binlog_append(binlog, event)) {
+			return luaL_error(L, "appending event to stream failed");
+		}
+
+		lua_pushboolean(L, 1);
+		return 1;
+	}
+
 	luaL_checktype(L, 2, LUA_TTABLE);
 
 	event = network_mysqld_binlog_event_new();
