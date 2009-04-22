@@ -19,7 +19,7 @@ mysql_proxy_LDADD		= $(BUILD_LDADD)
 mysql_binlog_dump_SOURCES	= mysql-binlog-dump.c
 mysql_binlog_dump_CPPFLAGS	= $(BUILD_CPPFLAGS)
 mysql_binlog_dump_CFLAGS	= $(BUILD_CFLAGS)
-mysql_binlog_dump_LDADD		= $(BUILD_LDADD) libmysql-proto-myisam.la
+mysql_binlog_dump_LDADD		= $(BUILD_LDADD)
 
 mysql_myisam_dump_SOURCES	= mysql-myisam-dump.c
 mysql_myisam_dump_CPPFLAGS	= $(BUILD_CPPFLAGS)

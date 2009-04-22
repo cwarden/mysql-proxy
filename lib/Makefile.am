@@ -48,7 +48,7 @@ mysql_la_SOURCES  = \
 ## get libtool to build a shared-lib
 mysql_la_CPPFLAGS = ${LUA_CFLAGS} ${GLIB_CFLAGS} -I${top_srcdir}/src/ ${MYSQL_CFLAGS} -I${top_builddir}/lib/
 mysql_la_LDFLAGS  = $(AM_LDFLAGS) -module -avoid-version
-mysql_la_LIBADD   = ${GLIB_LIBS} ${top_builddir}/src/libmysql-proxy.la ${top_builddir}/src/libmysql-proto-myisam.la
+mysql_la_LIBADD   = ${GLIB_LIBS} ${top_builddir}/src/libmysql-proxy.la
 
 lpeg_la_SOURCES  = lpeg.c
 lpeg_la_CPPFLAGS = ${LUA_CFLAGS}
