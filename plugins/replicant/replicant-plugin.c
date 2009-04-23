@@ -91,6 +91,9 @@ struct chassis_plugin_config {
 	gchar *lua_script;
 
 	network_mysqld_con *listen_con;
+
+	gchar *binlog_file;
+	int binlog_pos;
 };
 
 
@@ -377,7 +380,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 
 	switch (con->parse.command) {
 	case COM_BINLOG_DUMP:
-		err = err || network_mysqld_proto_get_int8(&packet, &status);
+		err = err || network_mysqld_proto_peek_int8(&packet, &status);
 
 		switch (status) {
 		case MYSQLD_PACKET_OK: {
@@ -388,6 +391,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			binlog = network_mysqld_binlog_new();
 			event = network_mysqld_binlog_event_new();
 
+			err = err || network_mysqld_proto_skip(&packet, 1);
 			err = err || network_mysqld_proto_get_binlog_event_header(&packet, event);
 			err = err || network_mysqld_proto_get_binlog_event(&packet, binlog, event);
 
@@ -423,7 +427,25 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			con->state = CON_STATE_READ_QUERY_RESULT;
 
 			break; }
+		case MYSQLD_PACKET_ERR: {
+			network_mysqld_err_packet_t *err_packet;
+
+			err_packet = network_mysqld_err_packet_new();
+
+			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+			if (!err) {
+				g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
+						G_STRLOC,
+						err_packet->errmsg->len ? err_packet->errmsg->str : "",
+						err_packet->errcode);
+			} 
+
+			network_mysqld_err_packet_free(err_packet);
+
+			return NETWORK_SOCKET_ERROR; }
 		default:
+			g_critical("%s: %d", G_STRLOC, status);
 			con->state = CON_STATE_ERROR;
 			break;
 		}
@@ -452,9 +474,14 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 		st->state = REPCLIENT_BINLOG_DUMP;
 
 		dump = network_mysqld_binlog_dump_new();
-		dump->binlog_pos  = st->binlog_pos;
 		dump->server_id   = my_server_id;
-		dump->binlog_file = g_strdup(st->binlog_file);
+		if (config->binlog_file) {
+			dump->binlog_pos  = config->binlog_pos;
+			dump->binlog_file = g_strdup(config->binlog_file);
+		} else {
+			dump->binlog_pos  = st->binlog_pos;
+			dump->binlog_file = g_strdup(st->binlog_file);
+		}
 
 		query_packet = g_string_new(NULL);
 
@@ -602,6 +629,8 @@ static GOptionEntry * network_mysqld_replicant_plugin_get_options(chassis_plugin
 		{ "replicant-username",                  0, 0, G_OPTION_ARG_STRING, NULL, "username", "" },
 		{ "replicant-password",                  0, 0, G_OPTION_ARG_STRING, NULL, "password", "" },
 		{ "replicant-lua-script",                0, 0, G_OPTION_ARG_STRING, NULL, "filename", "" },
+		{ "replicant-binlog-file",               0, 0, G_OPTION_ARG_STRING, NULL, "filename", "" },
+		{ "replicant-binlog-pos",                0, 0, G_OPTION_ARG_INT, NULL, "filename", "" },
 		{ NULL,                       0, 0, G_OPTION_ARG_NONE,   NULL, NULL, NULL }
 	};
 
@@ -610,6 +639,8 @@ static GOptionEntry * network_mysqld_replicant_plugin_get_options(chassis_plugin
 	config_entries[i++].arg_data = &(config->mysqld_username);
 	config_entries[i++].arg_data = &(config->mysqld_password);
 	config_entries[i++].arg_data = &(config->lua_script);
+	config_entries[i++].arg_data = &(config->binlog_file);
+	config_entries[i++].arg_data = &(config->binlog_pos);
 	
 	return config_entries;
 }
