@@ -129,7 +129,7 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 
 	fields = network_mysqld_proto_fielddefs_new();
 	chunk = network_mysqld_proto_get_fielddefs(chunk, fields);
-	g_assert(chunk);
+	if (!chunk) return -1;
 
 	/* a data row */
 	while (NULL != (chunk = chunk->next)) {
@@ -378,12 +378,10 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 	err = err || network_mysqld_proto_skip_network_header(&packet);
 	err = err || network_mysqld_proto_peek_int8(&packet, &status);
 
-	switch (con->parse.command) {
-	case COM_BINLOG_DUMP:
-		err = err || network_mysqld_proto_peek_int8(&packet, &status);
-
-		switch (status) {
-		case MYSQLD_PACKET_OK: {
+	switch (status) {
+	case MYSQLD_PACKET_OK: 
+		switch (con->parse.command) {
+		case COM_BINLOG_DUMP: {
 			/* looks like the binlog dump started */
 			network_mysqld_binlog *binlog;
 			network_mysqld_binlog_event *event;
@@ -427,81 +425,61 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			con->state = CON_STATE_READ_QUERY_RESULT;
 
 			break; }
-		case MYSQLD_PACKET_ERR: {
-			network_mysqld_err_packet_t *err_packet;
+		case COM_QUERY:
+			/* parse the result-set and get the 1st and 2nd column */
 
-			err_packet = network_mysqld_err_packet_new();
+			err = err || network_mysqld_resultset_master_status(chas, con);
+			if (err) {
+				g_message("%s", G_STRLOC);
+				return NETWORK_SOCKET_ERROR;
+			}
 
-			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+			st->state = REPCLIENT_BINLOG_DUMP;
 
-			if (!err) {
-				g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
-						G_STRLOC,
-						err_packet->errmsg->len ? err_packet->errmsg->str : "",
-						err_packet->errcode);
-			} 
+			dump = network_mysqld_binlog_dump_new();
+			dump->server_id   = my_server_id;
+			if (config->binlog_file) {
+				dump->binlog_pos  = config->binlog_pos;
+				dump->binlog_file = g_strdup(config->binlog_file);
+			} else {
+				dump->binlog_pos  = st->binlog_pos;
+				dump->binlog_file = g_strdup(st->binlog_file);
+			}
 
-			network_mysqld_err_packet_free(err_packet);
+			query_packet = g_string_new(NULL);
 
-			return NETWORK_SOCKET_ERROR; }
-		default:
-			g_critical("%s: %d", G_STRLOC, status);
-			con->state = CON_STATE_ERROR;
+			network_mysqld_proto_append_binlog_dump(query_packet, dump);
+			
+			network_mysqld_queue_append(con->server->send_queue, S(query_packet), 0);
+
+			network_mysqld_binlog_dump_free(dump);
+		
+			g_string_free(query_packet, TRUE);
+
+			con->state = CON_STATE_SEND_QUERY;
+			network_mysqld_con_reset_command_response_state(con);
 			break;
 		}
-		break;
-	case COM_QUERY:
-		break;
+	case MYSQLD_PACKET_ERR: {
+		network_mysqld_err_packet_t *err_packet;
+
+		err_packet = network_mysqld_err_packet_new();
+
+		err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+		if (!err) {
+			g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
+					G_STRLOC,
+					err_packet->errmsg->len ? err_packet->errmsg->str : "",
+					err_packet->errcode);
+		} 
+
+		network_mysqld_err_packet_free(err_packet);
+
+		return NETWORK_SOCKET_ERROR; }
 	default:
-		break;
-	}
-
-	/**
-	 * the resultset handler might decide to trash the send-queue
-	 * 
-	 * */
-
-	switch (st->state) {
-	case REPCLIENT_BINLOG_GET_POS:
-		/* parse the result-set and get the 1st and 2nd column */
-
-		err = err || network_mysqld_resultset_master_status(chas, con);
-		if (err) {
-			g_message("%s", G_STRLOC);
-			return NETWORK_SOCKET_ERROR;
-		}
-
-		st->state = REPCLIENT_BINLOG_DUMP;
-
-		dump = network_mysqld_binlog_dump_new();
-		dump->server_id   = my_server_id;
-		if (config->binlog_file) {
-			dump->binlog_pos  = config->binlog_pos;
-			dump->binlog_file = g_strdup(config->binlog_file);
-		} else {
-			dump->binlog_pos  = st->binlog_pos;
-			dump->binlog_file = g_strdup(st->binlog_file);
-		}
-
-		query_packet = g_string_new(NULL);
-
-		network_mysqld_proto_append_binlog_dump(query_packet, dump);
-	       	
-		network_mysqld_queue_append(con->server->send_queue, S(query_packet), 0);
-
-		network_mysqld_binlog_dump_free(dump);
-	
-		g_string_free(query_packet, TRUE);
-
-		con->state = CON_STATE_SEND_QUERY;
-		network_mysqld_con_reset_command_response_state(con);
-
-		break;
-	case REPCLIENT_BINLOG_DUMP:
-		/* remove all packets */
-
-		/* trash the packets for the injection query */
-
+		g_critical("%s: %d", G_STRLOC, status);
+		con->state = CON_STATE_ERROR;
 		break;
 	}
 
