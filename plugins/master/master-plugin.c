@@ -47,12 +47,12 @@
 #define S(x) x->str, x->len
 
 struct chassis_plugin_config {
-	gchar *address;                   /**< listening address of the admin interface */
+	gchar *address;                   /**< listening address of the master interface */
 
 	gchar *lua_script;                /**< script to load at the start the connection */
 
-	gchar *admin_username;            /**< login username */
-	gchar *admin_password;            /**< login password */
+	gchar *master_username;            /**< login username */
+	gchar *master_password;            /**< login password */
 
 	network_mysqld_con *listen_con;
 };
@@ -106,7 +106,7 @@ int network_mysqld_con_handle_stmt(chassis G_GNUC_UNUSED *chas, network_mysqld_c
 			network_mysqld_con_send_resultset(con->client, fields, rows);
 		} else {
 			con->client->packet_id++;
-			network_mysqld_con_send_error(con->client, C("(admin-server) query not known"));
+			network_mysqld_con_send_error(con->client, C("(master-server) query not known"));
 		}
 
 		/* clean up */
@@ -150,7 +150,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_con_init) {
 	GString *packet;
 
 	challenge = network_mysqld_auth_challenge_new();
-	challenge->server_version_str = g_strdup("5.0.99-agent-admin");
+	challenge->server_version_str = g_strdup("5.0.99-agent-master");
 	challenge->server_version     = 50099;
 	challenge->charset            = 0x08; /* latin1 */
 	challenge->capabilities       = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_LONG_PASSWORD;
@@ -207,11 +207,11 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_read_auth) {
 	/* check if the password matches */
 	excepted_response = g_string_new(NULL);
 
-	if (!strleq(S(con->client->response->username), con->config->admin_username, strlen(con->config->admin_username))) {
+	if (!strleq(S(con->client->response->username), con->config->master_username, strlen(con->config->master_username))) {
 		network_mysqld_con_send_error_full(send_sock, C("unknown user"), 1045, "28000");
 		
 		con->state = CON_STATE_SEND_ERROR; /* close the connection after we have sent this packet */
-	} else if (network_mysqld_proto_scramble(excepted_response, recv_sock->challenge->challenge, con->config->admin_password)) {
+	} else if (network_mysqld_proto_scramble(excepted_response, recv_sock->challenge->challenge, con->config->master_password)) {
 		network_mysqld_con_send_error_full(send_sock, C("scrambling failed"), 1045, "28000");
 		
 		con->state = CON_STATE_SEND_ERROR; /* close the connection after we have sent this packet */
@@ -234,7 +234,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_read_auth) {
 	return NETWORK_SOCKET_SUCCESS;
 }
 
-static network_mysqld_lua_stmt_ret admin_lua_read_query(network_mysqld_con *con) {
+static network_mysqld_lua_stmt_ret master_lua_read_query(network_mysqld_con *con) {
 	network_mysqld_con_lua_t *st = con->plugin_con_state;
 	char command = -1;
 	network_socket *recv_sock = con->client;
@@ -405,7 +405,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_read_query) {
 
 	con->parse.len = recv_sock->packet_len;
 
-	ret = admin_lua_read_query(con);
+	ret = master_lua_read_query(con);
 
 	switch (ret) {
 	case PROXY_NO_DECISION:
@@ -431,11 +431,11 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_read_query) {
 }
 
 /**
- * cleanup the admin specific data on the current connection 
+ * cleanup the master specific data on the current connection 
  *
  * @return NETWORK_SOCKET_SUCCESS
  */
-NETWORK_MYSQLD_PLUGIN_PROTO(admin_disconnect_client) {
+NETWORK_MYSQLD_PLUGIN_PROTO(master_disconnect_client) {
 	network_mysqld_con_lua_t *st = con->plugin_con_state;
 	lua_scope  *sc = con->srv->priv->sc;
 
@@ -463,12 +463,12 @@ static int network_mysqld_server_connection_init(network_mysqld_con *con) {
 
 	con->plugins.con_read_query       = server_read_query;
 	
-	con->plugins.con_cleanup          = admin_disconnect_client;
+	con->plugins.con_cleanup          = master_disconnect_client;
 
 	return 0;
 }
 
-static chassis_plugin_config *network_mysqld_admin_plugin_new(void) {
+static chassis_plugin_config *network_mysqld_master_plugin_new(void) {
 	chassis_plugin_config *config;
 
 	config = g_new0(chassis_plugin_config, 1);
@@ -476,7 +476,7 @@ static chassis_plugin_config *network_mysqld_admin_plugin_new(void) {
 	return config;
 }
 
-static void network_mysqld_admin_plugin_free(chassis_plugin_config *config) {
+static void network_mysqld_master_plugin_free(chassis_plugin_config *config) {
 	if (config->listen_con) {
 		/* the socket will be freed by network_mysqld_free() */
 	}
@@ -485,8 +485,8 @@ static void network_mysqld_admin_plugin_free(chassis_plugin_config *config) {
 		g_free(config->address);
 	}
 
-	if (config->admin_username) g_free(config->admin_username);
-	if (config->admin_password) g_free(config->admin_password);
+	if (config->master_username) g_free(config->master_username);
+	if (config->master_password) g_free(config->master_password);
 	if (config->lua_script) g_free(config->lua_script);
 
 	g_free(config);
@@ -495,23 +495,23 @@ static void network_mysqld_admin_plugin_free(chassis_plugin_config *config) {
 /**
  * add the proxy specific options to the cmdline interface 
  */
-static GOptionEntry * network_mysqld_admin_plugin_get_options(chassis_plugin_config *config) {
+static GOptionEntry * network_mysqld_master_plugin_get_options(chassis_plugin_config *config) {
 	guint i;
 
 	static GOptionEntry config_entries[] = 
 	{
-		{ "admin-address",            0, 0, G_OPTION_ARG_STRING, NULL, "listening address:port of the admin-server (default: :4041)", "<host:port>" },
-		{ "admin-username",           0, 0, G_OPTION_ARG_STRING, NULL, "username to allow to log in (default: root)", "<string>" },
-		{ "admin-password",           0, 0, G_OPTION_ARG_STRING, NULL, "password to allow to log in (default: )", "<string>" },
-		{ "admin-lua-script",         0, 0, G_OPTION_ARG_FILENAME, NULL, "script to execute by the admin plugin", "<filename>" },
+		{ "master-address",            0, 0, G_OPTION_ARG_STRING, NULL, "listening address:port of the master-server (default: :4041)", "<host:port>" },
+		{ "master-username",           0, 0, G_OPTION_ARG_STRING, NULL, "username to allow to log in (default: root)", "<string>" },
+		{ "master-password",           0, 0, G_OPTION_ARG_STRING, NULL, "password to allow to log in (default: )", "<string>" },
+		{ "master-lua-script",         0, 0, G_OPTION_ARG_FILENAME, NULL, "script to execute by the master plugin", "<filename>" },
 		
 		{ NULL,                       0, 0, G_OPTION_ARG_NONE,   NULL, NULL, NULL }
 	};
 
 	i = 0;
 	config_entries[i++].arg_data = &(config->address);
-	config_entries[i++].arg_data = &(config->admin_username);
-	config_entries[i++].arg_data = &(config->admin_password);
+	config_entries[i++].arg_data = &(config->master_username);
+	config_entries[i++].arg_data = &(config->master_password);
 	config_entries[i++].arg_data = &(config->lua_script);
 
 	return config_entries;
@@ -520,13 +520,13 @@ static GOptionEntry * network_mysqld_admin_plugin_get_options(chassis_plugin_con
 /**
  * init the plugin with the parsed config
  */
-static int network_mysqld_admin_plugin_apply_config(chassis *chas, chassis_plugin_config *config) {
+static int network_mysqld_master_plugin_apply_config(chassis *chas, chassis_plugin_config *config) {
 	network_mysqld_con *con;
 	network_socket *listen_sock;
 
 	if (!config->address) config->address = g_strdup(":4041");
-	if (!config->admin_username) config->admin_username = g_strdup("root");
-	if (!config->admin_password) config->admin_password = g_strdup("secret");
+	if (!config->master_username) config->master_username = g_strdup("root");
+	if (!config->master_password) config->master_password = g_strdup("secret");
 
 	/** 
 	 * create a connection handle for the listen socket 
@@ -565,13 +565,13 @@ static int network_mysqld_admin_plugin_apply_config(chassis *chas, chassis_plugi
 
 G_MODULE_EXPORT int plugin_init(chassis_plugin *p) {
 	p->magic        = CHASSIS_PLUGIN_MAGIC;
-	p->name         = g_strdup("admin");
+	p->name         = g_strdup("master");
 	p->version		= g_strdup("0.7.0");
 
-	p->init         = network_mysqld_admin_plugin_new;
-	p->get_options  = network_mysqld_admin_plugin_get_options;
-	p->apply_config = network_mysqld_admin_plugin_apply_config;
-	p->destroy      = network_mysqld_admin_plugin_free;
+	p->init         = network_mysqld_master_plugin_new;
+	p->get_options  = network_mysqld_master_plugin_get_options;
+	p->apply_config = network_mysqld_master_plugin_apply_config;
+	p->destroy      = network_mysqld_master_plugin_free;
 
 	return 0;
 }
