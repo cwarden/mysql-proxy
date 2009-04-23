@@ -1403,18 +1403,22 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 			 * send error to the client
 			 * and close the connections afterwards
 			 *  */
-			switch (network_mysqld_write(srv, con->client)) {
-			case NETWORK_SOCKET_SUCCESS:
-				break;
-			case NETWORK_SOCKET_WAIT_FOR_EVENT:
-				WAIT_FOR_EVENT(con->client, EV_WRITE, NULL);
-				return;
-			case NETWORK_SOCKET_ERROR_RETRY:
-			case NETWORK_SOCKET_ERROR:
-				g_critical("%s.%d: network_mysqld_write(CON_STATE_SEND_ERROR) returned an error", __FILE__, __LINE__);
+			if (con->client) {
+				switch (network_mysqld_write(srv, con->client)) {
+				case NETWORK_SOCKET_SUCCESS:
+					break;
+				case NETWORK_SOCKET_WAIT_FOR_EVENT:
+					WAIT_FOR_EVENT(con->client, EV_WRITE, NULL);
+					return;
+				case NETWORK_SOCKET_ERROR_RETRY:
+				case NETWORK_SOCKET_ERROR:
+					g_critical("%s.%d: network_mysqld_write(CON_STATE_SEND_ERROR) returned an error", __FILE__, __LINE__);
 
-				con->state = CON_STATE_ERROR;
-				break;
+					con->state = CON_STATE_ERROR;
+					break;
+				}
+			} else {
+				g_debug("%s: reached CON_STATE_SEND_ERROR without a client to send it to", G_STRLOC);
 			}
 				
 			con->state = CON_STATE_ERROR;
