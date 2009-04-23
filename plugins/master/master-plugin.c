@@ -57,7 +57,7 @@ struct chassis_plugin_config {
 	network_mysqld_con *listen_con;
 };
 
-int network_mysqld_con_handle_stmt(chassis G_GNUC_UNUSED *chas, network_mysqld_con *con, GString *s) {
+static int network_mysqld_con_handle_stmt(chassis G_GNUC_UNUSED *chas, network_mysqld_con *con, GString *s) {
 	gsize i, j;
 	GPtrArray *fields;
 	GPtrArray *rows;
@@ -150,7 +150,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(server_con_init) {
 	GString *packet;
 
 	challenge = network_mysqld_auth_challenge_new();
-	challenge->server_version_str = g_strdup("5.0.99-agent-master");
+	challenge->server_version_str = g_strdup("5.0.99-master");
 	challenge->server_version     = 50099;
 	challenge->charset            = 0x08; /* latin1 */
 	challenge->capabilities       = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_LONG_PASSWORD;
@@ -370,6 +370,9 @@ static network_mysqld_lua_stmt_ret master_lua_read_query(network_mysqld_con *con
 		if (ret != PROXY_NO_DECISION) {
 			return ret;
 		}
+	} else {
+		network_mysqld_con_handle_stmt(NULL, con, packet);
+		return PROXY_SEND_RESULT;
 	}
 #endif
 	return PROXY_NO_DECISION;
