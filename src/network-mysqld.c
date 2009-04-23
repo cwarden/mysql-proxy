@@ -1340,7 +1340,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 					/* if we don't need the resultset, forward it to the client */
 					if (!con->resultset_is_finished && !con->resultset_is_needed) {
 						/* check how much data we have in the queue waiting, no need to try to send 5 bytes */
-						if (con->client->send_queue->len > 64 * 1024) {
+						if (con->client && con->client->send_queue->len > 64 * 1024) {
 							con->state = CON_STATE_SEND_QUERY_RESULT;
 						}
 					}
