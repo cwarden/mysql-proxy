@@ -81,6 +81,8 @@ typedef struct {
 	enum { REPCLIENT_BINLOG_GET_POS, REPCLIENT_BINLOG_DUMP } state;
 	char *binlog_file;
 	int binlog_pos;
+
+	network_mysqld_binlog *binlog;
 } plugin_con_state;
 
 struct chassis_plugin_config {
@@ -101,6 +103,8 @@ static plugin_con_state *plugin_con_state_init() {
 	plugin_con_state *st;
 
 	st = g_new0(plugin_con_state, 1);
+
+	st->binlog = network_mysqld_binlog_new();
 
 	return st;
 }
@@ -379,52 +383,81 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 	err = err || network_mysqld_proto_peek_int8(&packet, &status);
 
 	switch (status) {
+	case MYSQLD_PACKET_ERR: {
+		network_mysqld_err_packet_t *err_packet;
+
+		err_packet = network_mysqld_err_packet_new();
+
+		err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+		if (!err) {
+			g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
+					G_STRLOC,
+					err_packet->errmsg->len ? err_packet->errmsg->str : "",
+					err_packet->errcode);
+		} 
+
+		network_mysqld_err_packet_free(err_packet);
+
+		return NETWORK_SOCKET_ERROR; }
 	case MYSQLD_PACKET_OK: 
 		switch (con->parse.command) {
 		case COM_BINLOG_DUMP: {
 			/* looks like the binlog dump started */
-			network_mysqld_binlog *binlog;
 			network_mysqld_binlog_event *event;
+			network_mysqld_binlog *binlog = st->binlog;
 
-			binlog = network_mysqld_binlog_new();
 			event = network_mysqld_binlog_event_new();
 
-			err = err || network_mysqld_proto_skip(&packet, 1);
-			err = err || network_mysqld_proto_get_binlog_event_header(&packet, event);
-			err = err || network_mysqld_proto_get_binlog_event(&packet, binlog, event);
+			con->state = CON_STATE_ERROR; /* default to the error-case */
 
-			if (!err && config->lua_script) {
-				lua_State *L;
-				/* call lua to expose the event */
+			if (network_mysqld_proto_skip(&packet, 1)) {
+				g_critical("%s: ", G_STRLOC);
+			} else if (network_mysqld_proto_get_binlog_event_header(&packet, event)) {
+				g_critical("%s: ", G_STRLOC);
+			} else if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
+				g_debug_hexdump(G_STRLOC, S(packet.data));
+				g_critical("%s: failed to decode event %d",
+						G_STRLOC,
+						event->event_type);
+			} else {
+				if (config->lua_script) {
+					lua_State *L;
+					/* call lua to expose the event */
 
-				L = luaL_newstate();
+					L = luaL_newstate();
 
-				luaL_openlibs(L);
+					luaL_openlibs(L);
 
-				if (0 != luaL_loadfile(L, config->lua_script)) {
-					g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-					return NETWORK_SOCKET_ERROR;
+					if (0 != luaL_loadfile(L, config->lua_script)) {
+						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+						return NETWORK_SOCKET_ERROR;
+					}
+					if (0 != lua_pcall(L, 0, 0, 0)) {
+						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+						return NETWORK_SOCKET_ERROR;
+					}
+					lua_getglobal(L, "binlog_event_iterate");
+					lua_mysqld_binlog_push(L, binlog);
+					lua_mysqld_binlog_event_push(L, event, FALSE);
+					if (0 != lua_pcall(L, 2, 1, 0)) {
+						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+						return NETWORK_SOCKET_ERROR;
+					}
+
+					lua_close(L);
 				}
-				if (0 != lua_pcall(L, 0, 0, 0)) {
-					g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-					return NETWORK_SOCKET_ERROR;
-				}
-				lua_getglobal(L, "binlog_event_iterate");
-				lua_mysqld_binlog_event_push(L, event, FALSE);
-				if (0 != lua_pcall(L, 1, 1, 0)) {
-					g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-					return NETWORK_SOCKET_ERROR;
-				}
-
-				lua_close(L);
+			
+				con->state = CON_STATE_READ_QUERY_RESULT;
 			}
 
 			network_mysqld_binlog_event_free(event);
-			network_mysqld_binlog_free(binlog);
-			
-			con->state = CON_STATE_READ_QUERY_RESULT;
 
 			break; }
+		}
+		break;
+	default:
+		switch (con->parse.command) {
 		case COM_QUERY:
 			/* parse the result-set and get the 1st and 2nd column */
 
@@ -459,28 +492,12 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			con->state = CON_STATE_SEND_QUERY;
 			network_mysqld_con_reset_command_response_state(con);
 			break;
+		default:
+			g_debug_hexdump(G_STRLOC, S(packet.data));
+			g_critical("%s: %d", G_STRLOC, status);
+			con->state = CON_STATE_ERROR;
+			break;
 		}
-	case MYSQLD_PACKET_ERR: {
-		network_mysqld_err_packet_t *err_packet;
-
-		err_packet = network_mysqld_err_packet_new();
-
-		err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
-
-		if (!err) {
-			g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
-					G_STRLOC,
-					err_packet->errmsg->len ? err_packet->errmsg->str : "",
-					err_packet->errcode);
-		} 
-
-		network_mysqld_err_packet_free(err_packet);
-
-		return NETWORK_SOCKET_ERROR; }
-	default:
-		g_critical("%s: %d", G_STRLOC, status);
-		con->state = CON_STATE_ERROR;
-		break;
 	}
 
 	if (chunk->data) g_string_free(chunk->data, TRUE);
