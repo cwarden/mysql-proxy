@@ -458,6 +458,51 @@ NETWORK_MYSQLD_PLUGIN_PROTO(master_disconnect_client) {
 	return NETWORK_SOCKET_SUCCESS;
 }
 
+NETWORK_MYSQLD_PLUGIN_PROTO(master_get_more_rows) {
+	network_mysqld_con_lua_t *st = con->plugin_con_state;
+	gboolean is_done = FALSE;
+
+	if (st->L) {
+		lua_State *L = st->L;
+
+		lua_getglobal(L, "proxy");
+		lua_getfield(L, -1, "response");
+		lua_getfield(L, -1, "packets");
+
+		if (!lua_isnil(L, -1)) {
+			if (0 != lua_pcall(L, 0, 1, 0)) {
+				g_critical("%s: %s",
+						G_STRLOC,
+						lua_tostring(L, -1));
+				lua_pop(L, 1);
+			} else {
+				if (lua_isnil(L, -1)) {
+					/* we are done */
+					con->state = CON_STATE_READ_QUERY;
+				} else if (lua_isstring(L, -1)) {
+					size_t str_len;
+					const char *str = lua_tolstring(L, -1, &str_len);
+
+					/* stay in this state and send the data */
+					network_mysqld_queue_append(con->client->send_queue, str, str_len, con->client->packet_id++);
+				} else {
+					g_critical("%s: the iterator should either return a string or nil", G_STRLOC);
+					con->state = CON_STATE_ERROR;
+				}
+				lua_pop(L, 1);
+			}
+		} else {
+			con->state = CON_STATE_READ_QUERY;
+			lua_pop(L, 1);
+		}
+
+		lua_pop(L, 2);
+	} else {
+		con->state = CON_STATE_READ_QUERY;
+	}
+
+	return NETWORK_SOCKET_SUCCESS;
+}
 
 static int network_mysqld_server_connection_init(network_mysqld_con *con) {
 	con->plugins.con_init             = server_con_init;
@@ -465,6 +510,8 @@ static int network_mysqld_server_connection_init(network_mysqld_con *con) {
 	con->plugins.con_read_auth        = server_read_auth;
 
 	con->plugins.con_read_query       = server_read_query;
+	con->plugins.con_read_query_result = master_get_more_rows;
+	con->plugins.con_send_query_result = master_get_more_rows; /* call the resultset iterator to get more data to send */
 	
 	con->plugins.con_cleanup          = master_disconnect_client;
 

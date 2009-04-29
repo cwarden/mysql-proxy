@@ -1391,6 +1391,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 
 			switch (plugin_call(srv, con, con->state)) {
 			case NETWORK_SOCKET_SUCCESS:
+				ostate = 0; /* FIXME: do a proper loop if the hook added something to the send-queue */
 				break;
 			default:
 				con->state = CON_STATE_ERROR;
