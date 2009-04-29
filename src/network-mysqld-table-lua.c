@@ -53,6 +53,13 @@
 		return 1; \
 	}
 
+#define LUA_UDATA_EXPORT_NUMBER(tbl, name) \
+	if (strleq(C(G_STRINGIFY(name)), key, keysize)) { \
+		lua_pushnumber(L, tbl->name); \
+		return 1; \
+	}
+
+
 static int lua_mysqld_column_get(lua_State *L) {
 	network_mysqld_column *col = *(network_mysqld_column **)luaL_checkself(L);
 	gsize keysize = 0;
@@ -60,6 +67,21 @@ static int lua_mysqld_column_get(lua_State *L) {
 
 	LUA_UDATA_EXPORT_CSTR(col, name);
 	LUA_UDATA_EXPORT_CSTR(col, org_name);
+	
+	if (strleq(C("type"), key, keysize)) {
+		lua_pushstring(L, network_mysqld_column_get_typestring(col));
+		return 1;
+	}
+
+	if (strleq(C("is_nullable"), key, keysize)) {
+		lua_pushboolean(L, (col->flags & NOT_NULL_FLAG) ? 0 : 1);
+		return 1;
+	}
+
+	if (strleq(C("length"), key, keysize)) {
+		lua_pushinteger(L, col->max_length);
+		return 1;
+	}
 
 	return 0;
 }
