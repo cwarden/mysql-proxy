@@ -34,6 +34,7 @@
 #include "network-exports.h"
 #include "network-mysqld-table.h"
 
+NETWORK_API int lua_mysqld_columns_push(lua_State *L, network_mysqld_columns *udata);
 NETWORK_API int lua_mysqld_table_push(lua_State *L, network_mysqld_table *tbl);
 
 #endif
