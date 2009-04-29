@@ -46,6 +46,8 @@ network_mysqld_myisam_field *network_mysqld_myisam_field_new();
 void network_mysqld_myisam_field_free(network_mysqld_myisam_field *field);
 int network_mysqld_proto_get_myisam_field(network_packet *packet, network_mysqld_myisam_field *field);
 const char *network_mysqld_myisam_field_get_typestring(enum enum_field_types type);
+int network_mysqld_proto_append_myisam_field(GString *packet, 
+		network_mysqld_myisam_field *field);
 
 /**
  * a row of myisam-packed fields 

@@ -226,6 +226,144 @@ int network_mysqld_proto_get_myisam_field(network_packet *packet,
 }
 
 /**
+ * decode a packet into proto_field according to field->fielddef->type
+ *
+ * @param field field definition
+ * @returns 0 on success, -1 on error
+ */
+int network_mysqld_proto_append_myisam_field(GString *packet, 
+		network_mysqld_myisam_field *field) {
+	guint64 length;
+	guint8  i8;
+	guint16 i16;
+	guint32 i32;
+	guint64 i64;
+	double  d;
+	network_mysqld_column *column = field->column;
+	int err = 0;
+
+	switch ((guchar)column->type) {
+	case MYSQL_TYPE_TIMESTAMP: /* int4store */
+	case MYSQL_TYPE_LONG:
+		network_mysqld_proto_append_int32(packet, field->data.i);
+		break;
+	case MYSQL_TYPE_DATETIME: /* int8store */
+	case MYSQL_TYPE_LONGLONG:
+		network_mysqld_proto_append_int64(packet, field->data.i);
+		break;
+	case MYSQL_TYPE_INT24:     
+	case MYSQL_TYPE_DATE:      /* int3store, a newdate, old-data is 4 byte */
+		network_mysqld_proto_append_int24(packet, field->data.i);
+		break;
+	case MYSQL_TYPE_SHORT:     
+		network_mysqld_proto_append_int16(packet, field->data.i);
+		break;
+	case MYSQL_TYPE_TINY:     
+		network_mysqld_proto_append_int8(packet, field->data.i);
+		break;
+	case MYSQL_TYPE_ENUM:
+		switch (column->max_length) {
+		case 1:
+			network_mysqld_proto_append_int8(packet, field->data.i);
+			break;
+		case 2:
+			network_mysqld_proto_append_int16(packet, field->data.i);
+			break;
+		default:
+			g_error("%s: enum-length = %lu", 
+					G_STRLOC,
+					column->max_length);
+			break;
+		}
+		break;
+#if 0
+	case MYSQL_TYPE_BLOB:
+		switch (column->max_length) {
+		case 1:
+			err = err || network_mysqld_proto_get_int8(packet, &i8);
+			if (!err) length = i8;
+			break;
+		case 2:
+			err = err || network_mysqld_proto_get_int16(packet, &i16);
+			if (!err) length = i16;
+			break;
+		case 3:
+			err = err || network_mysqld_proto_get_int24(packet, &i32);
+			if (!err) length = i32;
+			break;
+		case 4:
+			err = err || network_mysqld_proto_get_int32(packet, &i32);
+			if (!err) length = i32;
+			break;
+		default:
+			/* unknown blob-length */
+			g_debug_hexdump(G_STRLOC, S(packet->data));
+			g_error("%s: blob-length = %lu", 
+					G_STRLOC,
+					column->max_length);
+			break;
+		}
+		err = err || network_mysqld_proto_get_string_len(packet, &field->data.s, length);
+		break;
+#endif
+	case MYSQL_TYPE_VARCHAR:
+	case MYSQL_TYPE_VAR_STRING:
+	case MYSQL_TYPE_STRING:
+		if (column->max_length < 256) {
+			network_mysqld_proto_append_int8(packet, strlen(field->data.s));
+			g_string_append_len(packet, field->data.s, strlen(field->data.s));
+		} else {
+			network_mysqld_proto_append_int16(packet, strlen(field->data.s));
+			g_string_append_len(packet, field->data.s, strlen(field->data.s));
+		}
+
+		break;
+#if 0
+	case MYSQL_TYPE_NEWDECIMAL: {
+		/* the decimal is binary encoded
+		 */
+		guchar digits_per_bytes[] = { 0, 1, 1, 2, 2, 3, 3, 4, 4, 4 }; /* how many bytes are needed to store x decimal digits */
+
+		guint i_digits = column->max_length - column->decimals;
+		guint f_digits = column->decimals;
+
+		guint decimal_full_blocks       = i_digits / 9; /* 9 decimal digits in 4 bytes */
+		guint decimal_last_block_digits = i_digits % 9; /* how many digits are left ? */
+
+		guint scale_full_blocks         = f_digits / 9; /* 9 decimal digits in 4 bytes */
+		guint scale_last_block_digits   = f_digits % 9; /* how many digits are left ? */
+
+		guint size = 0;
+
+		size += decimal_full_blocks * digits_per_bytes[9] + digits_per_bytes[decimal_last_block_digits];
+		size += scale_full_blocks   * digits_per_bytes[9] + digits_per_bytes[scale_last_block_digits];
+
+#if 0
+		g_debug_hexdump(G_STRLOC " (NEWDECIMAL)", packet->data->str, packet->data->len);
+#endif
+#if 0
+		g_critical("%s: don't know how to decode NEWDECIMAL(%lu, %u) at offset %u (%d)",
+				G_STRLOC,
+				column->max_length,
+				column->decimals,
+				packet->offset,
+				size
+				);
+#endif
+		err = err || network_mysqld_proto_skip(packet, size);
+		break; }
+#endif
+	default:
+		g_error("%s: unknown field-type to write: %d",
+				G_STRLOC,
+				column->type);
+		break;
+	}
+
+	return err ? -1 : 0;
+}
+
+/**
  * create a row of fields based on a field-definition and the current null-bits
  *
  * @return a initialized row definition
