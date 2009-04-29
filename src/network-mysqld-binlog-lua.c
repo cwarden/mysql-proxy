@@ -179,6 +179,8 @@ static int lua_mysqld_binlog_rows_event_next_iter(lua_State *L) {
 				event->event.row_event.null_bits_len);
 	}
 
+	if (err) return luaL_error(L, "decoding the row-event failed");
+
 	/* push a pre and a post table */
 	lua_newtable(L);
 	lua_mysqld_binlog_rows_event_push_row(L, pre_fields);
@@ -216,8 +218,8 @@ static int lua_mysqld_binlog_rows_event_next(lua_State *L) {
 	}
 
 	/* setup the row-iterator */
-	iter->row.str = event->event.row_event.row;
-	iter->row.len = event->event.row_event.row_len;
+	iter->row.str = event->event.row_event.row->str;
+	iter->row.len = event->event.row_event.row->len;
 
 	iter->row_packet.data = &(iter->row);
 	iter->row_packet.offset = 0;
@@ -284,6 +286,16 @@ static int lua_mysqld_binlog_tablemap_event_get(lua_State *L) {
 	LUA_UDATA_EXPORT_INT((&(event->event.table_map_event)), flags);
 	LUA_UDATA_EXPORT_CSTR((&(event->event.table_map_event)), db_name);
 	LUA_UDATA_EXPORT_CSTR((&(event->event.table_map_event)), table_name);
+
+	/* expose the fields */
+	if (strleq(C("fields"), key, keysize)) {
+		network_mysqld_columns *columns;
+
+		columns = network_mysqld_columns_new();
+		network_mysqld_binlog_event_tablemap_to_table_columns(event, columns);
+
+		return lua_mysqld_columns_push(L, columns);
+	}
 
 	return 0;
 }
@@ -585,6 +597,40 @@ int lua_mysqld_binlog_event_push(lua_State *L, network_mysqld_binlog_event *udat
 	return 1;
 }
 
+static int lua_mysqld_binlog_event_decode(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	gsize s_len;
+	const char *s = luaL_checklstring(L, 2, &s_len);
+	network_mysqld_binlog_event *event;
+	network_packet packet;
+	GString str;
+
+	str.str = s;
+	str.len = s_len;
+
+	packet.data = &str;
+	packet.offset = 0;
+	
+	event = network_mysqld_binlog_event_new();
+	network_mysqld_proto_get_binlog_event_header(&packet, event);
+
+	if (event->event_size < 19) {
+		g_critical("%s: event-size = %ld, expected = %"G_GUINT32_FORMAT,
+			G_STRLOC,
+			event->event_size,
+			19);
+		network_mysqld_binlog_event_free(event);
+		return 0;
+	}
+
+	if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
+		network_mysqld_binlog_event_free(event);
+		return 0;
+	}
+
+	return lua_mysqld_binlog_event_push(L, event, TRUE);
+}
+
 typedef struct {
 	network_mysqld_binlog *binlog;
 	goffset off;
@@ -655,25 +701,50 @@ static int lua_mysqld_binlog_next(lua_State *L) {
 	return 1;
 }
 
+int network_mysqld_binlog_row_event_from_myisam_row(network_mysqld_binlog_event *event, 
+		network_mysqld_myisam_row *row) {
+	guint i;
+	GString *packet;
+	int null_bits_offset;
+	int null_bits_len;
+
+	if (event->event.row_event.columns_len == 0) {
+		event->event.row_event.columns_len = row->fields->len;
+	}
+
+	if (event->event.row_event.used_columns_len == 0) {
+		event->event.row_event.used_columns_len = (int)((event->event.row_event.columns_len+7)/8);
+		event->event.row_event.used_columns = g_new0(gchar, event->event.row_event.used_columns_len);
+	}
+
+	if (!event->event.row_event.row) event->event.row_event.row = g_string_new(NULL);
+
+	packet = event->event.row_event.row;
+	null_bits_offset = packet->len;
+	null_bits_len =  (int)((event->event.row_event.columns_len+7)/8);
+	g_string_set_size(packet, packet->len + null_bits_len);
+
+	for (i = 0; i < row->fields->len; i++) {
+		network_mysqld_myisam_field *field = row->fields->pdata[i];
+
+		event->event.row_event.used_columns[i / 8] |= 1 << (i % 8);
+
+		if (field->is_null) {
+			event->event.row_event.row->str[null_bits_offset + (i / 8)] |= 1 << (i % 8);
+		} else {
+			network_mysqld_proto_append_myisam_field(packet, field);
+		}
+	}
+
+	return 0;
+}
+
 /**
+ * turn a event-lua-table into a event-userdata 
  */
-static int lua_mysqld_binlog_append(lua_State *L) {
+static int lua_mysqld_binlog_event_encode(lua_State *L) {
 	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
 	network_mysqld_binlog_event *event;
-	GString *packet;
-
-	/* can take a table or a event-userdata */
-	if (lua_type(L, 2) == LUA_TUSERDATA) {
-		network_mysqld_binlog_event_freeable *udata = (network_mysqld_binlog_event_freeable *)lua_touserdata(L, 2);
-		event = udata->event;
-
-		if (network_mysqld_binlog_append(binlog, event)) {
-			return luaL_error(L, "appending event to stream failed");
-		}
-
-		lua_pushboolean(L, 1);
-		return 1;
-	}
 
 	luaL_checktype(L, 2, LUA_TTABLE);
 
@@ -719,6 +790,46 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 	}
 	lua_pop(L, 1);
 
+#define LUA_IMPORT_NUMBER_NIL(obj, key, on_nil) \
+		lua_getfield(L, -1, G_STRINGIFY(key)); \
+		if (lua_isnumber(L, -1)) { \
+			obj.key = lua_tonumber(L, -1); \
+		} else if (lua_isnil(L, -1)) { \
+			on_nil; \
+		} else { \
+			luaL_error(L, "."G_STRINGIFY(key)" has to be a number"); \
+		} \
+		lua_pop(L, 1);
+
+#define LUA_IMPORT_NUMBER(obj, key) \
+	LUA_IMPORT_NUMBER_NIL(obj, key, luaL_error(L, "."G_STRINGIFY(key)" can't be nil"))
+
+#define LUA_IMPORT_STRING_FUNKY(obj, key, before_assign, after_assign, on_nil) \
+		lua_getfield(L, -1, G_STRINGIFY(key)); \
+		if (lua_isstring(L, -1)) { \
+			size_t s_len; \
+			const char *s = lua_tolstring(L, -1, &s_len); \
+			before_assign;\
+			if (obj.key) g_free(obj.key); \
+			obj.key = g_strdup(s); \
+			after_assign; \
+		} else if (lua_isnil(L, -1)) { \
+			on_nil; \
+		} else { \
+			luaL_error(L, "."G_STRINGIFY(key)" has to be a string"); \
+		} \
+		lua_pop(L, 1);
+
+#define LUA_IMPORT_STRING_LEN_ASSIGN_AND_NIL(obj, key, before_assign, on_nil) LUA_IMPORT_STRING_FUNKY(obj, key, before_assign, obj.key ## _len = s_len, on_nil)
+#define LUA_IMPORT_STRING_LEN_ASSIGN(obj, key, before_assign) LUA_IMPORT_STRING_LEN_ASSIGN_AND_NIL(obj, key, before_assign, luaL_error(L, "."G_STRINGIFY(key)" can't be nil"))
+#define LUA_IMPORT_STRING_LEN_NIL(obj, key, on_nil)  LUA_IMPORT_STRING_LEN_ASSIGN_AND_NIL(obj, key, , on_nil)
+#define LUA_IMPORT_STRING_LEN(obj, key) LUA_IMPORT_STRING_LEN_NIL(obj, key, luaL_error(L, "."G_STRINGIFY(key)" can't be nil"))
+
+#define LUA_IMPORT_STRING_ASSIGN_AND_NIL(obj, key, before_assign, on_nil) LUA_IMPORT_STRING_FUNKY(obj, key, before_assign, , on_nil)
+#define LUA_IMPORT_STRING_ASSIGN(obj, key, before_assign) LUA_IMPORT_STRING_ASSIGN_AND_NIL(obj, key, before_assign, luaL_error(L, "."G_STRINGIFY(key)" can't be nil"))
+#define LUA_IMPORT_STRING_NIL(obj, key, on_nil)  LUA_IMPORT_STRING_ASSIGN_AND_NIL(obj, key, , on_nil)
+#define LUA_IMPORT_STRING(obj, key) LUA_IMPORT_STRING_NIL(obj, key, luaL_error(L, "."G_STRINGIFY(key)" can't be nil"))
+
 	switch (event->event_type) {
 	case FORMAT_DESCRIPTION_EVENT:
 		lua_getfield(L, 2, "format");
@@ -738,25 +849,11 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		}
 		lua_pop(L, 1);
 
-		lua_getfield(L, -1, "binlog_version");
-		if (lua_isnumber(L, -1)) {
-			event->event.format_event.binlog_version = lua_tointeger(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			event->event.format_event.binlog_version = 4;
-		} else {
-			luaL_error(L, ".binlog_version has to be a number");
-		}
-		lua_pop(L, 1);
+		LUA_IMPORT_NUMBER_NIL(event->event.format_event, binlog_version, 
+				event->event.format_event.binlog_version = 4)
 
-		lua_getfield(L, -1, "created_ts");
-		if (lua_isnumber(L, -1)) {
-			event->event.format_event.created_ts = lua_tointeger(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			event->event.format_event.created_ts = time(NULL);
-		} else {
-			luaL_error(L, ".created_ts has to be a number");
-		}
-		lua_pop(L, 1);
+		LUA_IMPORT_NUMBER_NIL(event->event.format_event, created_ts, 
+				event->event.format_event.created_ts = time(NULL))
 
 		event->event.format_event.log_header_len = 19;
 
@@ -797,39 +894,27 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 			return luaL_error(L, "a QUERY_EVENT needs a .query table");
 		}
 
-		lua_getfield(L, -1, "query");
-		if (lua_isstring(L, -1)) {
-			if (event->event.query_event.query) g_free(event->event.query_event.query);
-			event->event.query_event.query = g_strdup(lua_tostring(L, -1));
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".query can't be nil");
-		} else {
-			luaL_error(L, ".query has to be a string");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "db_name");
-		if (lua_isstring(L, -1)) {
-			size_t s_len;
-			const char *s;
-
-			s = lua_tolstring(L, -1, &s_len);
-
+		LUA_IMPORT_STRING(event->event.query_event, query);
+		LUA_IMPORT_NUMBER_NIL(event->event.query_event, thread_id, event->event.query_event.thread_id = 1);
+		LUA_IMPORT_STRING_LEN_ASSIGN_AND_NIL(event->event.query_event, db_name,
 			if (s_len >= 255) {
 				luaL_error(L, ".db_name can only be 255 char max");
-			}
-
-			if (event->event.query_event.db_name) g_free(event->event.query_event.db_name);
-			event->event.query_event.db_name = g_strdup(s);
-			event->event.query_event.db_name_len = s_len;
-		} else if (lua_isnil(L, -1)) {
+			},
 			if (event->event.query_event.db_name) g_free(event->event.query_event.db_name);
 			event->event.query_event.db_name = NULL;
 			event->event.query_event.db_name_len = 0;
-		} else {
-			luaL_error(L, ".db_name has to be a string");
-		}
+			);
+
 		lua_pop(L, 1);
+		break;
+	case ROTATE_EVENT:
+		lua_getfield(L, 2, "rotate");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a ROTATE_EVENT needs a .rotate table");
+		}
+
+		LUA_IMPORT_NUMBER(event->event.rotate_event, binlog_pos);
+		LUA_IMPORT_STRING(event->event.rotate_event, binlog_file);
 
 		lua_pop(L, 1);
 		break;
@@ -842,15 +927,7 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 			return luaL_error(L, "a XID_EVENT needs a .xid table");
 		}
 
-		lua_getfield(L, -1, "xid_id");
-		if (lua_isnumber(L, -1)) {
-			event->event.xid.xid_id = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".xid_id can't be nil");
-		} else {
-			luaL_error(L, ".xid_id has to be a string");
-		}
-		lua_pop(L, 1);
+		LUA_IMPORT_NUMBER(event->event.xid, xid_id);
 
 		lua_pop(L, 1);
 		break;
@@ -860,25 +937,8 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 			return luaL_error(L, "a INTVAR_EVENT needs a .intvar table");
 		}
 
-		lua_getfield(L, -1, "type");
-		if (lua_isnumber(L, -1)) {
-			event->event.intvar.type = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".type can't be nil");
-		} else {
-			luaL_error(L, ".type has to be a string");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "value");
-		if (lua_isnumber(L, -1)) {
-			event->event.intvar.value = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".value can't be nil");
-		} else {
-			luaL_error(L, ".value has to be a string");
-		}
-		lua_pop(L, 1);
+		LUA_IMPORT_NUMBER(event->event.intvar, type);
+		LUA_IMPORT_NUMBER(event->event.intvar, value);
 
 		lua_pop(L, 1);
 		break;
@@ -887,57 +947,11 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		if (!lua_istable(L, -1)) {
 			return luaL_error(L, "a USER_VAR_EVENT needs a .uservar table");
 		}
+		LUA_IMPORT_STRING_LEN(event->event.user_var_event, name);
+		LUA_IMPORT_STRING_LEN_NIL(event->event.user_var_event, value, event->event.user_var_event.is_null = 1);
 
-		lua_getfield(L, -1, "name");
-		if (lua_isstring(L, -1)) {
-			size_t s_len;
-			const char *s = lua_tolstring(L, -1, &s_len);
-
-			if (event->event.user_var_event.name) g_free(event->event.user_var_event.name);
-			event->event.user_var_event.name = g_strdup(s);
-			event->event.user_var_event.name_len = s_len;
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".name can't be nil");
-		} else {
-			luaL_error(L, ".name has to be a string");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "value");
-		if (lua_isstring(L, -1)) {
-			size_t s_len;
-			const char *s = lua_tolstring(L, -1, &s_len);
-
-			if (event->event.user_var_event.value) g_free(event->event.user_var_event.value);
-			event->event.user_var_event.value = g_strdup(s);
-			event->event.user_var_event.value_len = s_len;
-		} else if (lua_isnil(L, -1)) {
-			event->event.user_var_event.is_null = 1;
-		} else {
-			luaL_error(L, ".value has to be a string");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "type");
-		if (lua_isnumber(L, -1)) {
-			event->event.user_var_event.type = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".type can't be nil");
-		} else {
-			luaL_error(L, ".type has to be a string");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "charset");
-		if (lua_isnumber(L, -1)) {
-			event->event.user_var_event.charset = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".charset can't be nil");
-		} else {
-			luaL_error(L, ".charset has to be a string");
-		}
-		lua_pop(L, 1);
-
+		LUA_IMPORT_NUMBER(event->event.user_var_event, type);
+		LUA_IMPORT_NUMBER(event->event.user_var_event, charset);
 
 		lua_pop(L, 1);
 		break;
@@ -947,48 +961,280 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 			return luaL_error(L, "a INCIDENT_EVENT needs a .incident table");
 		}
 
-		lua_getfield(L, -1, "incident");
-		if (lua_isnumber(L, -1)) {
-			event->event.incident.incident_id = lua_tonumber(L, -1);
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".incident can't be nil");
-		} else {
-			luaL_error(L, ".incident has to be a number");
-		}
-		lua_pop(L, 1);
-
-		lua_getfield(L, -1, "message");
-		if (lua_isstring(L, -1)) {
-			size_t s_len;
-			const char *s;
-
-			s = lua_tolstring(L, -1, &s_len);
-
+		LUA_IMPORT_NUMBER(event->event.incident, incident_id);
+		LUA_IMPORT_STRING_LEN_ASSIGN(event->event.incident, message, 
 			if (s_len >= 255) {
 				luaL_error(L, ".message can only be 255 char max");
 			}
-			if (event->event.incident.message) g_free(event->event.incident.message);
-			event->event.incident.message = g_strdup(s);
-			event->event.incident.message_len = s_len;
-		} else if (lua_isnil(L, -1)) {
-			luaL_error(L, ".message can't be nil");
-		} else {
-			luaL_error(L, ".message has to be a string");
-		}
-		lua_pop(L, 1);
+			);
 
 		lua_pop(L, 1);
 		break;
+	case TABLE_MAP_EVENT:
+		lua_getfield(L, 2, "table_map");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a TABLE_MAP_EVENT needs a .table_map table");
+		}
 
+		LUA_IMPORT_NUMBER(event->event.table_map_event, table_id);
+		LUA_IMPORT_STRING_LEN(event->event.table_map_event, db_name);
+		LUA_IMPORT_STRING_LEN(event->event.table_map_event, table_name);
+
+		/** 
+		 * convert the fields-notation as used for the resultsets into the table_map
+		 *
+		 */
+		lua_getfield(L, -1, "fields");
+		if (lua_istable(L, -1)) {
+			guint i;
+			network_mysqld_columns *cols = network_mysqld_columns_new();
+			for (i = 0; i < lua_objlen(L, -1); i++) {
+				network_mysqld_column *col = network_mysqld_column_new();
+				lua_pushinteger(L, i + 1);
+				lua_gettable(L, -2);
+
+				if (lua_istable(L, -1)) {
+					lua_getfield(L, -1, "name");
+					/* ignore it for now */
+					lua_pop(L, 1);
+
+					lua_getfield(L, -1, "type");
+					if (lua_isnumber(L, -1)) {
+						col->type = lua_tonumber(L, -1);
+					} else {
+						luaL_error(L, "type for [%d] has to be a number", i + 1);
+					}
+					lua_pop(L, 1);
+
+					lua_getfield(L, -1, "is_nullable");
+					if (lua_isboolean(L, -1)) {
+						col->flags = lua_toboolean(L, -1) ? 0 : NOT_NULL_FLAG;
+					} else if (lua_isnil(L, -1)) {
+						/* default to allow NULL */
+						col->flags = 0;
+					} else {
+						luaL_error(L, ".is_nullable for [%d] has to be a boolean", i + 1);
+					}
+					lua_pop(L, 1);
+
+					lua_getfield(L, -1, "length");
+					if (lua_isnumber(L, -1)) {
+						col->max_length = lua_tonumber(L, -1);
+					} else if (lua_isnil(L, -1)) {
+						switch (col->type) {
+						case MYSQL_TYPE_STRING:
+						case MYSQL_TYPE_VARCHAR:
+							luaL_error(L, ".length for [%d] has to be set", i + 1);
+							break;
+						default:
+							break;
+						}
+					} else {
+						luaL_error(L, ".length for [%d] has to be a number", i + 1);
+					}
+					lua_pop(L, 1);
+
+				}
+
+				g_ptr_array_add(cols, col);
+
+				lua_pop(L, 1);
+			}
+			network_mysqld_binlog_event_tablemap_from_table_columns(event, cols);
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, "."G_STRINGIFY(key)" can't be nil");
+		} else {
+			luaL_error(L, "."G_STRINGIFY(key)" has to be a table");
+		}
+		lua_pop(L, 1);
+		
+		lua_pop(L, 1);
+		break;
+	case WRITE_ROWS_EVENT:
+		lua_getfield(L, 2, "rbr");
+		if (!lua_istable(L, -1)) {
+			return luaL_error(L, "a WRITE_ROWS_EVENT needs a .rbr table");
+		}
+
+		LUA_IMPORT_NUMBER(event->event.row_event, table_id);
+		LUA_IMPORT_NUMBER(event->event.row_event, flags);
+
+		/** 
+		 * convert the fields-notation as used for the resultsets into the table_map
+		 *
+		 * rows = { 
+		 *   {
+		 *     before = { },
+		 *     after = { },
+		 *   }, ...
+		 * }
+		 *
+		 */
+		lua_getfield(L, -1, "rows");
+		if (lua_istable(L, -1)) {
+			network_mysqld_myisam_field *field;
+			network_mysqld_table *tbl;
+			guint row_ndx, row_count = lua_objlen(L, -1);
+
+			tbl = g_hash_table_lookup(binlog->rbr_tables, &(event->event.row_event.table_id));
+			g_assert(tbl);
+
+			for (row_ndx = 0; row_ndx < row_count; row_ndx++) {
+				lua_pushinteger(L, row_ndx + 1);
+				lua_gettable(L, -2);
+
+				if (lua_istable(L, -1)) {
+					network_mysqld_myisam_row *row;
+
+					row = network_mysqld_myisam_row_new();
+
+					lua_getfield(L, -1, "before");
+					if (lua_istable(L, -1)) {
+						guint i;
+						guint len = lua_objlen(L, -1);
+
+						for (i = 0; i < len; i++) {
+							lua_pushinteger(L, i + 1);
+							lua_gettable(L, -2);
+
+							field = network_mysqld_myisam_field_new();
+							field->column = tbl->columns->pdata[i]; /* get the definition from the table */
+
+							if (lua_isnil(L, -1)) {
+								if (field->column->flags & NOT_NULL_FLAG) {
+									luaL_error(L, "field[%d] is defined as NOT NULL, can't set it to nil", i + 1);
+								}
+								field->is_null = TRUE;
+							} else {
+								switch (field->column->type) {
+								case MYSQL_TYPE_VARCHAR:
+								case MYSQL_TYPE_VAR_STRING:
+								case MYSQL_TYPE_STRING:
+								case MYSQL_TYPE_BLOB:
+									if (lua_isstring(L, -1)) {
+										field->data.s = g_strdup(lua_tostring(L, -1));
+									} else {
+										return luaL_error(L, "args");
+									}
+									break;
+								case MYSQL_TYPE_TIMESTAMP:
+								case MYSQL_TYPE_DATETIME:
+								case MYSQL_TYPE_DATE:
+								case MYSQL_TYPE_ENUM:
+								case MYSQL_TYPE_SET:
+								case MYSQL_TYPE_TINY:
+								case MYSQL_TYPE_SHORT:
+								case MYSQL_TYPE_LONG:
+								case MYSQL_TYPE_INT24:
+								case MYSQL_TYPE_LONGLONG:
+									if (lua_isnumber(L, -1)) {
+										field->data.i = lua_tonumber(L, -1);
+									} else {
+										return luaL_error(L, "args");
+									}
+									break;
+								case MYSQL_TYPE_DOUBLE:
+									if (lua_isnumber(L, -1)) {
+										field->data.f = lua_tonumber(L, -1);
+									} else {
+										return luaL_error(L, "args");
+									}
+									break;
+
+								}
+							}
+
+							g_ptr_array_add(row->fields, field);
+
+							lua_pop(L, 1);
+						}
+					} else {
+						return luaL_error(L, "");
+					}
+					lua_pop(L, 1);
+
+					network_mysqld_binlog_row_event_from_myisam_row(event, row);
+
+					network_mysqld_myisam_row_free(row);
+				} else {
+					return luaL_error(L, "");
+				}
+				lua_pop(L, 1);
+			}
+		} else if (lua_isnil(L, -1)) {
+			luaL_error(L, "."G_STRINGIFY(key)" can't be nil");
+		} else {
+			luaL_error(L, "."G_STRINGIFY(key)" has to be a table");
+		}
+		lua_pop(L, 1);
+		
+		lua_pop(L, 1);
+		break;
 	}
 
-	if (network_mysqld_binlog_append(binlog, event)) {
-		return luaL_error(L, "appending event to stream failed");
-	}
-
-	lua_pushboolean(L, 1);
+	lua_mysqld_binlog_event_push(L, event, TRUE);
 
 	return 1;
+}
+
+/**
+ */
+static int lua_mysqld_binlog_append(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	network_mysqld_binlog_event *event;
+	GString *packet;
+
+	/* can take a table or a event-userdata */
+	if (lua_type(L, 2) == LUA_TUSERDATA) {
+		network_mysqld_binlog_event_freeable *udata = (network_mysqld_binlog_event_freeable *)lua_touserdata(L, 2);
+		event = udata->event;
+	} else {
+		lua_mysqld_binlog_event_encode(L);
+		event = lua_touserdata(L, -1);
+	}
+
+	if (binlog->mode == BINLOG_MODE_WRITE) {
+		if (network_mysqld_binlog_append(binlog, event)) {
+			return luaL_error(L, "appending event to stream failed");
+		}
+		lua_pop(L, 1); /* pop the converted event */
+		lua_pushboolean(L, 1);
+
+		return 1;
+	} else {
+		GString *header;
+
+		/* a binlog created with .new() ... as we can't write to it, return a packet */
+		packet = g_string_new(NULL);
+		if (network_mysqld_proto_append_binlog_event(packet, event)) {
+			g_critical("%s", G_STRLOC);
+			g_string_free(packet, TRUE);
+			return 0;
+		}
+		
+		event->event_size = 19 /* the header */ + packet->len;
+		event->log_pos = binlog->log_pos + event->event_size;
+		
+		header = g_string_new(NULL);
+		if (network_mysqld_proto_append_binlog_event_header(header, event)) {
+			g_critical("%s", G_STRLOC);
+			g_string_free(packet, TRUE);
+			g_string_free(header, TRUE);
+			return 0;
+		}
+
+		binlog->log_pos = event->log_pos;
+		lua_pop(L, 1); /* pop the converted event */
+
+		lua_pushlstring(L, S(header));
+		lua_pushlstring(L, S(packet));
+		lua_concat(L, 2);
+		
+		g_string_free(header, TRUE);
+		g_string_free(packet, TRUE);
+
+		return 1;
+	}
 }
 
 
@@ -1000,6 +1246,16 @@ static int lua_mysqld_binlog_close(lua_State *L) {
 	return 0;
 }
 
+static int lua_mysqld_binlog_seek(lua_State *L) {
+	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
+	goffset off = luaL_checknumber(L, 2);
+
+	binlog->log_pos = off;
+
+	return 0;
+}
+
+
 /**
  * register the table that is tracked with the table-map event
  *
@@ -1007,12 +1263,28 @@ static int lua_mysqld_binlog_close(lua_State *L) {
  */
 static int lua_mysqld_binlog_tablemap_register(lua_State *L) {
 	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
-	network_mysqld_binlog_event *event = *(network_mysqld_binlog_event **)lua_touserdata(L, 2);
-	network_mysqld_table *tbl = network_mysqld_table_new();
+	network_mysqld_binlog_event *event;
+	network_mysqld_table *tbl;
 
-	network_mysqld_binlog_event_tablemap_get(event, tbl);
+	if (lua_type(L, 2) == LUA_TTABLE) {
+		lua_mysqld_binlog_event_encode(L);
+		event = lua_touserdata(L, -1);
+	} else if (lua_type(L, 2) == LUA_TUSERDATA) {
+		network_mysqld_binlog_event_freeable *udata = (network_mysqld_binlog_event_freeable *)lua_touserdata(L, 2);
+		event = udata->event;
+	} else {
+		return luaL_error(L, ":register() should get a event-userdata or a table");
+	}
+
+	tbl = network_mysqld_table_new();
+
+	network_mysqld_binlog_event_tablemap_to_table(event, tbl);
 	
 	g_hash_table_insert(binlog->rbr_tables, guint64_new(tbl->table_id), tbl);
+	
+	if (lua_type(L, 2) == LUA_TTABLE) {
+		lua_pop(L, 1);
+	}
 
 	return 0;
 }
@@ -1041,6 +1313,9 @@ int lua_mysqld_binlog_getmetatable(lua_State *L) {
 		{ "close", lua_mysqld_binlog_close },
 		{ "table_register", lua_mysqld_binlog_tablemap_register },
 		{ "table_get", lua_mysqld_binlog_tablemap_get },
+		{ "to_event", lua_mysqld_binlog_event_encode },
+		{ "from_event", lua_mysqld_binlog_event_decode },
+		{ "seek", lua_mysqld_binlog_seek },
 		{ NULL, NULL },
 	};
 	return proxy_getmetatable(L, methods);

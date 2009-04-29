@@ -135,7 +135,7 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 	case TABLE_MAP_EVENT:
 		tbl = network_mysqld_table_new();
 
-		network_mysqld_binlog_event_tablemap_get(event, tbl);
+		network_mysqld_binlog_event_tablemap_to_table(event, tbl);
 	
 		g_hash_table_insert(binlog->rbr_tables, guint64_new(tbl->table_id), tbl);
 
@@ -165,8 +165,8 @@ int network_mysqld_binlog_event_print(network_mysqld_binlog *binlog,
 			break;
 		}
 
-		row.str = event->event.row_event.row;
-		row.len = event->event.row_event.row_len;
+		row.str = event->event.row_event.row->str;
+		row.len = event->event.row_event.row->len;
 
 		row_packet.data = &row;
 		row_packet.offset = 0;

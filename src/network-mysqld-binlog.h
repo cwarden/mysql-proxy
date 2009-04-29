@@ -104,7 +104,7 @@ typedef struct {
 	guint32 log_pos; /* current write-log-pos */
 
 	gchar *filename;
-	int mode;
+	enum { BINLOG_MODE_UNSET, BINLOG_MODE_READ, BINLOG_MODE_WRITE } mode;
 
 	/* we have to store some information from the format description event 
 	 */
@@ -188,8 +188,7 @@ typedef struct {
 
 			guint32 null_bits_len;
 			
-			guint32 row_len;
-			gchar *row;      /* raw row-buffer in the format:
+			GString *row;    /* raw row-buffer in the format:
 					    [null-bits] [field_0, ...]
 					    [null-bits] [field_0, ...]
 					    */
@@ -241,8 +240,21 @@ NETWORK_API void network_mysqld_binlog_dump_free(network_mysqld_binlog_dump *dum
 NETWORK_API int network_mysqld_proto_append_binlog_dump(GString *packet, network_mysqld_binlog_dump *dump);
 
 
-NETWORK_API int network_mysqld_binlog_event_tablemap_get(
+/**
+ * functions to convert between table-map-events and our interal table-structure 
+ */
+
+NETWORK_API int network_mysqld_binlog_event_tablemap_to_table(
 		network_mysqld_binlog_event *event,
 		network_mysqld_table *tbl);
+NETWORK_API int network_mysqld_binlog_event_tablemap_to_table_columns(
+		network_mysqld_binlog_event *event,
+		network_mysqld_columns *columns);
+NETWORK_API int network_mysqld_binlog_event_tablemap_from_table(
+		network_mysqld_binlog_event *event,
+		network_mysqld_table *tbl);
+NETWORK_API int network_mysqld_binlog_event_tablemap_from_table_columns(
+		network_mysqld_binlog_event *event,
+		network_mysqld_columns *columns);
 
 #endif

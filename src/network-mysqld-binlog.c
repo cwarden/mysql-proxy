@@ -84,14 +84,14 @@ int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filena
 	char binlog_header[4];
 
 	if (0 == strcmp(mode_str, "r")) {
-		binlog->mode = O_RDONLY;
+		binlog->mode = BINLOG_MODE_READ;
 	} else if (0 == strcmp(mode_str, "w")) {
-		binlog->mode = O_WRONLY;
+		binlog->mode = BINLOG_MODE_WRITE;
 	} else {
 		return -1;
 	}
 
-	if (binlog->mode == O_RDONLY) {
+	if (binlog->mode == BINLOG_MODE_READ) {
 		if (-1 == (binlog->fd = g_open(filename, O_RDONLY, 0))) {
 			g_critical("%s: opening '%s' failed: %s",
 					G_STRLOC,
@@ -146,8 +146,8 @@ int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_b
 	GString *packet, *header;
 	ssize_t r;
 
-	if (binlog->mode != O_WRONLY) {
-		g_critical("%s", G_STRLOC);
+	if (binlog->mode != BINLOG_MODE_WRITE) {
+		g_critical("%s: trying to append to a read-only binlog stream", G_STRLOC);
 		return -1;
 	}
 
@@ -333,6 +333,17 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 		g_string_append(packet, event->event.query_event.query);
 
 		break;
+	case ROTATE_EVENT:
+		network_mysqld_proto_append_int32(packet, event->event.rotate_event.binlog_pos);
+		g_string_append_c(packet, '\0');
+		g_string_append_c(packet, '\0');
+		g_string_append_c(packet, '\0');
+		g_string_append_c(packet, '\0');
+		g_string_append_len(
+				packet, 
+				event->event.rotate_event.binlog_file,
+				strlen(event->event.rotate_event.binlog_file));
+		break;
 	case STOP_EVENT:
 		/* no data to write */
 		break;
@@ -376,6 +387,100 @@ int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_bin
 				event->event.incident.message_len);
 
 		break;
+	case TABLE_MAP_EVENT:
+		/**
+		 * looks like a abstract definition of a table 
+		 *
+		 * no, we don't want to know
+		 */
+		network_mysqld_proto_append_int48(packet,
+				event->event.table_map_event.table_id); /* 6 bytes */
+		network_mysqld_proto_append_int16(packet,
+				event->event.table_map_event.flags);
+
+		network_mysqld_proto_append_int8(packet,
+				event->event.table_map_event.db_name_len);
+		
+		g_string_append_len(
+				packet,
+				event->event.table_map_event.db_name,
+				event->event.table_map_event.db_name_len);
+		g_string_append_c(packet, '\0');
+
+		network_mysqld_proto_append_int8(packet,
+				event->event.table_map_event.table_name_len);
+		g_string_append_len(
+				packet,
+				event->event.table_map_event.table_name,
+				event->event.table_map_event.table_name_len);
+		g_string_append_c(packet, '\0');
+
+		network_mysqld_proto_append_lenenc_int(packet,
+				event->event.table_map_event.columns_len);
+		g_string_append_len(
+				packet,
+				event->event.table_map_event.columns,
+				event->event.table_map_event.columns_len);
+
+		network_mysqld_proto_append_lenenc_int(packet,
+				event->event.table_map_event.metadata_len);
+		g_string_append_len(
+				packet,
+				event->event.table_map_event.metadata,
+				event->event.table_map_event.metadata_len);
+
+		/**
+		 * the null-bit count is columns/8 
+		 */
+
+		event->event.table_map_event.null_bits_len = (int)((event->event.table_map_event.columns_len+7)/8);
+		g_string_append_len(
+				packet,
+				event->event.table_map_event.null_bits,
+				event->event.table_map_event.null_bits_len);
+
+		break;
+	case DELETE_ROWS_EVENT: /* 25 */
+	case UPDATE_ROWS_EVENT: /* 24 */
+	case WRITE_ROWS_EVENT:  /* 23 */
+		network_mysqld_proto_append_int48(packet,
+				event->event.row_event.table_id); /* 6 bytes */
+		network_mysqld_proto_append_int16(packet,
+				event->event.row_event.flags );
+		
+		network_mysqld_proto_append_lenenc_int(packet,
+				event->event.row_event.columns_len);
+
+		/* a bit-mask of used-fields (m_cols.bitmap) */
+		event->event.row_event.used_columns_len = (int)((event->event.row_event.columns_len+7)/8);
+		g_string_append_len(
+				packet,
+				event->event.row_event.used_columns,
+				event->event.row_event.used_columns_len);
+
+		if (event->event_type == UPDATE_ROWS_EVENT) {
+			/* the before image */
+			g_string_append_len(
+					packet,
+					event->event.row_event.used_columns,
+					event->event.row_event.used_columns_len);
+
+		}
+
+		/* null-bits for all the columns */
+		event->event.row_event.null_bits_len = (int)((event->event.row_event.columns_len+7)/8);
+
+		/* the null-bits + row,
+		 *
+		 * the rows are stored in field-format, to decode we have to see
+		 * the table description
+		 */
+		g_string_append_len(
+				packet,
+				S(event->event.row_event.row));
+		
+		break;
+
 	default:
 		g_critical("%s: don't know how to write binlog-event %d (%s) yet", 
 				G_STRLOC,
@@ -572,11 +677,11 @@ int network_mysqld_proto_get_binlog_event(network_packet *packet,
 		 * the rows are stored in field-format, to decode we have to see
 		 * the table description
 		 */
-		event->event.row_event.row_len = packet->data->len - packet->offset;
-		err = err || network_mysqld_proto_get_string_len(
+		if (!event->event.row_event.row) event->event.row_event.row = g_string_new(NULL);
+		err = err || network_mysqld_proto_get_gstring_len(
 				packet,
-				&event->event.row_event.row,
-				event->event.row_event.row_len);
+				packet->data->len - packet->offset,
+				event->event.row_event.row);
 		
 		break;
 	case INTVAR_EVENT:
@@ -641,7 +746,7 @@ void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event) {
 	case UPDATE_ROWS_EVENT:
 	case WRITE_ROWS_EVENT:
 		if (event->event.row_event.used_columns) g_free(event->event.row_event.used_columns);
-		if (event->event.row_event.row) g_free(event->event.row_event.row);
+		if (event->event.row_event.row) g_string_free(event->event.row_event.row, TRUE);
 		break;
 	default:
 		break;
@@ -742,25 +847,107 @@ void network_mysqld_binlog_dump_free(network_mysqld_binlog_dump *dump) {
 	g_free(dump);
 }
 
+/**
+ * get the length of the meta-data for a given field-type
+ *
+ * ... to calc the right metadata-len of the table-map event 
+ */
+int network_mysqld_binlog_event_tablemap_get_type_len(enum enum_field_types type) {
+	switch (type) {
+	case MYSQL_TYPE_DATE:
+	case MYSQL_TYPE_DATETIME:
+	case MYSQL_TYPE_TIMESTAMP:
+	case MYSQL_TYPE_TINY:
+	case MYSQL_TYPE_SHORT:
+	case MYSQL_TYPE_INT24:
+	case MYSQL_TYPE_LONG:
+	case MYSQL_TYPE_LONGLONG: return 0;
+	case MYSQL_TYPE_DOUBLE:
+	case MYSQL_TYPE_FLOAT:
+	case MYSQL_TYPE_BLOB: return 1;
+	case MYSQL_TYPE_BIT:
+	case MYSQL_TYPE_ENUM:
+	case MYSQL_TYPE_NEWDECIMAL:
+	case MYSQL_TYPE_DECIMAL:
+	case MYSQL_TYPE_VARCHAR: 
+	case MYSQL_TYPE_VAR_STRING: 
+	case MYSQL_TYPE_STRING: return 2;
+	}
+
+	g_assert_not_reached();
+}
+
+/** 
+ * convert a table into table-map event
+ */
+int network_mysqld_binlog_event_tablemap_from_table_columns(
+		network_mysqld_binlog_event *event,
+		network_mysqld_columns *columns) {
+	guint i, pos;
+
+	event->event.table_map_event.columns_len = columns->len;
+	event->event.table_map_event.columns = g_new0(gchar, event->event.table_map_event.columns_len);
+	
+	event->event.table_map_event.null_bits_len = (int)((event->event.table_map_event.columns_len+7)/8);
+	event->event.table_map_event.null_bits = g_new0(gchar, event->event.table_map_event.null_bits_len);
+	
+	event->event.table_map_event.metadata_len = 0;
+
+	for (i = 0; i < columns->len; i++) {
+		network_mysqld_column *col = columns->pdata[i];
+
+		event->event.table_map_event.columns[i] = col->type;
+		event->event.table_map_event.null_bits[i / 8] |= ( col->flags & NOT_NULL_FLAG ) ? 0 : 1 << (i % 8);
+		event->event.table_map_event.metadata_len += network_mysqld_binlog_event_tablemap_get_type_len(col->type);
+	}
+
+	event->event.table_map_event.metadata = g_new0(gchar, event->event.table_map_event.metadata_len);
+	for (i = 0, pos = 0; i < columns->len; i++) {
+		network_mysqld_column *col = columns->pdata[i];
+
+		switch (col->type) {
+		case MYSQL_TYPE_STRING:
+			/* byte 0: real_type + upper bits of field-length (see #37426)
+			 * byte 1: field-length
+			 */
+			event->event.table_map_event.metadata[pos++] = col->type;
+			event->event.table_map_event.metadata[pos++] = col->max_length;
+			break;
+		case MYSQL_TYPE_VARCHAR:
+			event->event.table_map_event.metadata[pos++] = (col->max_length >> 0) & 0xff;
+			event->event.table_map_event.metadata[pos++] = (col->max_length >> 8) & 0xff;
+			break;
+		case MYSQL_TYPE_DATE:
+		case MYSQL_TYPE_DATETIME:
+		case MYSQL_TYPE_TIMESTAMP:
+
+		case MYSQL_TYPE_TINY:
+		case MYSQL_TYPE_SHORT:
+		case MYSQL_TYPE_INT24:
+		case MYSQL_TYPE_LONG:
+		case MYSQL_TYPE_LONGLONG:
+			break;
+		default:
+			g_error("%s: network_mysqld_binlog_event_tablemap_from_table_columns(%s [%d])",
+					G_STRLOC,
+					network_mysqld_column_get_typestring(col), col->type);
+			break;
+		}
+	}
+
+	return 0;
+}
 
 /**
- * decode the table-map event
- *
- * 
+ * convert a table-map event to a internal table
  */
-int network_mysqld_binlog_event_tablemap_get(
+int network_mysqld_binlog_event_tablemap_to_table_columns(
 		network_mysqld_binlog_event *event,
-		network_mysqld_table *tbl) {
-
+		network_mysqld_columns *columns) {
 	network_packet metadata_packet;
 	GString row;
 	guint i;
 	int err = 0;
-
-	g_string_assign(tbl->db_name, event->event.table_map_event.db_name);
-	g_string_assign(tbl->table_name, event->event.table_map_event.table_name);
-
-	tbl->table_id = event->event.table_map_event.table_id;
 
 	row.str = event->event.table_map_event.metadata;
 	row.len = event->event.table_map_event.metadata_len;
@@ -822,6 +1009,8 @@ int network_mysqld_binlog_event_tablemap_get(
 				/* a long CHAR() field */
 				field->max_length |= (((byte0 & 0x30) ^ 0x30) << 4);
 				field->type = byte0 | 0x30; /* see #37426 */
+			} else {
+				field->type = byte0;
 			}
 
 			break;
@@ -903,20 +1092,62 @@ int network_mysqld_binlog_event_tablemap_get(
 			break;
 		}
 
-		g_ptr_array_add(tbl->columns, field);
+		g_ptr_array_add(columns, field);
 	}
 
 	if (metadata_packet.offset != metadata_packet.data->len) {
 		g_debug_hexdump(G_STRLOC, event->event.table_map_event.columns, event->event.table_map_event.columns_len);
 		g_debug_hexdump(G_STRLOC, event->event.table_map_event.metadata, event->event.table_map_event.metadata_len);
 	}
+
 	if (metadata_packet.offset != metadata_packet.data->len) {
 		g_critical("%s: ",
 				G_STRLOC);
 		err = 1;
 	}
+	
+	return err ? -1 : 0;
+}
+
+/**
+ * decode the table-map event
+ *
+ *  
+ */
+int network_mysqld_binlog_event_tablemap_to_table(
+		network_mysqld_binlog_event *event,
+		network_mysqld_table *tbl) {
+
+	int err = 0;
+
+	g_string_assign(tbl->db_name, event->event.table_map_event.db_name);
+	g_string_assign(tbl->table_name, event->event.table_map_event.table_name);
+
+	tbl->table_id = event->event.table_map_event.table_id;
+
+	err = err || network_mysqld_binlog_event_tablemap_to_table_columns(event, tbl->columns);
 
 	return err ? -1 : 0;
 }
 
+/**
+ * convert a table object into a table-map event
+ */
+int network_mysqld_binlog_event_tablemap_from_table(
+		network_mysqld_binlog_event *event,
+		network_mysqld_table *tbl) {
+	int err = 0;
+
+	event->event.table_map_event.db_name = g_strdup(tbl->db_name->str);
+	event->event.table_map_event.db_name_len = tbl->db_name->len;
+
+	event->event.table_map_event.table_name = g_strdup(tbl->table_name->str);
+	event->event.table_map_event.table_name_len = tbl->table_name->len;
+
+	 event->event.table_map_event.table_id = tbl->table_id;
+
+	 err = err || network_mysqld_binlog_event_tablemap_from_table_columns(event, tbl->columns);
+
+	 return err ? -1 : 0;
+}
 
