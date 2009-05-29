@@ -363,6 +363,7 @@ int main_cmdline(int argc, char **argv) {
 		{ "plugin-dir",               0, 0, G_OPTION_ARG_STRING, NULL, "path to the plugins", "<path>" },
 		{ "plugins",                  0, 0, G_OPTION_ARG_STRING_ARRAY, NULL, "plugins to load", "<name>" },
 		{ "log-level",                0, 0, G_OPTION_ARG_STRING, NULL, "log all messages of level ... or higer", "(error|warning|info|message|debug)" },
+		{ "log-config-file",          0, 0, G_OPTION_ARG_FILENAME, NULL, "Use extended logging configuration", "<file>" },
 		{ "log-file",                 0, 0, G_OPTION_ARG_STRING, NULL, "log all messages in a file", "<file>" },
 		{ "log-use-syslog",           0, 0, G_OPTION_ARG_NONE, NULL, "log all messages to syslog", NULL },
 		{ "log-backtrace-on-crash",   0, 0, G_OPTION_ARG_NONE, NULL, "try to invoke debugger on crash", NULL },
@@ -440,6 +441,7 @@ int main_cmdline(int argc, char **argv) {
 	main_entries[i++].arg_data  = &(plugin_names);
 
 	main_entries[i++].arg_data  = &(log_level);
+	main_entries[i++].arg_data  = &(log->log_config_filename);
 	main_entries[i++].arg_data  = &(log->log_filename);
 	main_entries[i++].arg_data  = &(log->use_syslog);
 	main_entries[i++].arg_data  = &(invoke_dbg_on_crash);
@@ -632,11 +634,26 @@ int main_cmdline(int argc, char **argv) {
 	 * from the plugins, thus we need to fix them up before
 	 * dealing with all the rest.
 	 */
+	chassis_resolve_path(srv, &log->log_config_filename);
 	chassis_resolve_path(srv, &log->log_filename);
 	chassis_resolve_path(srv, &pid_file);
 	chassis_resolve_path(srv, &plugin_dir);
 
-	if (log->log_filename) {
+	/*
+	 * If we have a log config file, it takes precendence before the simple other log-* options.
+	 */
+	if (log->log_config_filename) {
+		chassis_log_extended_t *log_ext;
+		log_ext = chassis_log_extended_new();
+		log->log_ext = log_ext;
+		chassis_log_load_config(log_ext, log->log_config_filename);
+
+		/* reset the default log handler to our hierarchical logger */
+		g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+
+		/* the system should now be set up, let's try to log something */
+		g_message("this should go to the root logger on level message");
+	} else if (log->log_filename) {
         gboolean turned_off_syslog = FALSE;
         if (log->use_syslog) {
             log->use_syslog = FALSE;

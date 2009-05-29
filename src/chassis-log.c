@@ -56,7 +56,7 @@
 #define S(x) x->str, x->len
 
 /**
- * the mapping of our internal log levels various log systems
+ * the mapping of our internal log levels to various log systems
  */
 /* Attention: this needs to be adjusted should glib ever change its log level ordering */
 #define G_LOG_ERROR_POSITION 3
