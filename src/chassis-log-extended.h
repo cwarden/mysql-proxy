@@ -96,6 +96,7 @@ typedef struct chassis_log_extended_logger_target {
 	GString *last_msg;				/**< a copy of the last message we have written, used to coalesce messages */
 	time_t last_msg_ts;				/**< the timestamp of when we have last written a message */
 	guint last_msg_count;			/**< a repeat count to track how many messages we have coalesced */
+	GHashTable *last_loggers;		/**< a list of the loggers we coalesced messages for, in order of appearance */
 } chassis_log_extended_logger_target_t;
 
 /**

@@ -293,6 +293,8 @@ chassis_log_extended_logger_target_t* chassis_log_extended_logger_target_new(con
 		target->last_msg_ts = 0;
 		target->last_msg_count = 0;
 		target->log_func = chassis_log_extended_logger_target_write;
+		/* the value destroy function is NULL, because we treat the hash as a set */
+		target->last_loggers = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 	}
 	return target;
 }
@@ -304,6 +306,7 @@ void chassis_log_extended_logger_target_free(chassis_log_extended_logger_target_
 	if (target->fd_lock) g_mutex_free(target->fd_lock);
 	if (target->log_str) g_string_free(target->log_str, TRUE);
 	if (target->last_msg) g_string_free(target->last_msg, TRUE);
+	if (target->last_loggers) g_hash_table_unref(target->last_loggers);
 
 	g_free(target);
 }
@@ -356,14 +359,31 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 	}
 	if (!is_duplicate ||
 			target->last_msg_count > 100 ||
-			time(NULL) - target->last_msg_ts > 30) {
+			time(NULL) - target->last_msg_ts > 30) {	/* TODO: make these limits configurable */
 		if (target->last_msg_count) {
+			GString *logger_names = g_string_new("");
+			if (g_hash_table_size(target->last_loggers) > 0) { /* should be always true... */
+				GHashTableIter iter;
+				gpointer key, value;
+				guint i = 0;
+				guint hash_size = g_hash_table_size(target->last_loggers);
+
+				g_hash_table_iter_init(&iter, target->last_loggers);
+				while (g_hash_table_iter_next(&iter, &key, &value)) {
+					g_string_append(logger_names, (gchar*)key);
+					g_hash_table_iter_remove(&iter);
+					if (++i < hash_size) {
+						g_string_append(logger_names, ", ");
+					}
+				}
+			}
+
 			chassis_log_extended_logger_target_update_timestamp(target);
-			g_string_append_printf(target->log_str, ": [%s] (%s) last message repeated %d times\n",
-					logger_name_clean,
-					log_lvl_name,
+			g_string_append_printf(target->log_str, ": [%s] last message repeated %d times\n",
+					logger_names->str,
 					target->last_msg_count);
 			target->log_func(target, level, S(target->log_str));
+			g_string_free(logger_names, TRUE);
 		}
 		chassis_log_extended_logger_target_update_timestamp(target);
 		g_string_append_printf(target->log_str, ": [%s] (%s) %s\n",
@@ -379,6 +399,9 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 		/* ask the target to perform the write */
 		target->log_func(target, level, S(target->log_str));
 	} else {
+		/* save the logger_name to print all of the coalesced logger sources later */
+		gchar *hash_logger_name = g_strdup(logger_name_clean);
+		g_hash_table_insert(target->last_loggers, hash_logger_name, hash_logger_name);
 		target->last_msg_count++;
 	}
 

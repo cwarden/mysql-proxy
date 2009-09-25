@@ -680,6 +680,63 @@ START_TEST(coalescing) {
 	g_free(log_file_root);
 }
 
+START_TEST(coalescing_logger_names) {
+	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	gchar *log_file_root =  create_tmp_file_name();
+	gchar *log_file_contents;
+	gchar *broadcast_first, *broadcast_last;
+	chassis_log_extended_logger_t *root, *aa, *ab;
+	chassis_log_extended_logger_target_t *target_root;
+
+	/* install our default handler, don't bother with registering each log domain individually
+	 * revert the fatal mask g_test_init sets.
+	 */
+	g_log_set_always_fatal(G_LOG_FATAL_MASK);
+	g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+
+	target_root = chassis_log_extended_logger_target_new(log_file_root);
+	root = chassis_log_extended_logger_new("", G_LOG_LEVEL_MESSAGE, target_root);
+	aa = chassis_log_extended_logger_new("a.a", G_LOG_LEVEL_MESSAGE, target_root);
+	ab = chassis_log_extended_logger_new("a.b", G_LOG_LEVEL_MESSAGE, target_root);
+	
+	chassis_log_extended_register_target(log_ext, target_root);
+	chassis_log_extended_register_logger(log_ext, root);
+	chassis_log_extended_register_logger(log_ext, aa);
+	chassis_log_extended_register_logger(log_ext, ab);
+
+#undef G_LOG_DOMAIN
+#define G_LOG_DOMAIN ""
+	g_message("repeat");
+#undef G_LOG_DOMAIN
+#define G_LOG_DOMAIN "a.a"
+	g_warning("repeat");
+	g_warning("repeat");	/* test that any repeated messages from the same logger are collapsed properly */
+#undef G_LOG_DOMAIN
+#define G_LOG_DOMAIN "a.b"
+	g_message("repeat");
+#undef G_LOG_DOMAIN
+#define G_LOG_DOMAIN "unrelated"
+	g_message("no-repeat");
+#undef G_LOG_DOMAIN
+#define G_LOG_DOMAIN NULL
+
+	chassis_log_extended_free(log_ext);
+
+	log_file_contents = read_file_contents(log_file_root);
+	g_print("log file:\n%s", log_file_contents);
+	g_assert_cmpptr(g_strstr_len(log_file_contents, -1, "[global] (message) repeat"), !=, NULL);
+	/* the logger names are in a hash, we can't rely on their order when printed */
+	if (NULL != g_strstr_len(log_file_contents, -1, "[a.a, a.b] last message repeated 3 times") &&
+			NULL != g_strstr_len(log_file_contents, -1, "[a.b, a.a] last message repeated 3 times")) {
+		g_assert_cmpstr("duplicated logger names", ==, "but they should be collapsed");
+	}
+	g_assert_cmpptr(g_strstr_len(log_file_contents, -1, "[unrelated] (message) no-repeat"), !=, NULL);
+
+	g_free(log_file_contents);
+	g_unlink(log_file_root);
+	g_free(log_file_root);
+}
+
 START_TEST(effective_level_correction) {
 	chassis_log_extended_t *log_ext = chassis_log_extended_new();
 	gchar *log_file_root =  create_tmp_file_name();
@@ -790,6 +847,7 @@ int main(int argc, char **argv) {
 	TEST(log_func_implicit_logger_creation);
 	TEST(force_log_all);
 	TEST(coalescing);
+	TEST(coalescing_logger_names);
 	TEST(effective_level_correction);
 	return g_test_run();
 }

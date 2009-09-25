@@ -53,7 +53,7 @@ static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
 	return 0;
 }
 
-CHASSIS_API void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) {
+void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) {
 	GKeyFile *config = g_key_file_new();
 	GError *error = NULL;
 	gchar **keys, **groups;

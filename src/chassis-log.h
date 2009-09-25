@@ -26,7 +26,8 @@
 #endif
 
 #include "chassis-exports.h"
-  
+#include "chassis-log-extended.h"
+
 /** @addtogroup chassis */
 /*@{*/
 typedef struct {
