@@ -23,6 +23,7 @@ check_mysqld_proto_SOURCES  = \
 	check_mysqld_proto.c \
 	$(top_srcdir)/src/network-mysqld-binlog.c \
 	$(top_srcdir)/src/network-mysqld-proto.c \
+	$(top_srcdir)/src/network-mysqld-table.c \
 	$(top_srcdir)/src/glib-ext.c
 
 check_mysqld_proto_CPPFLAGS = -I$(top_srcdir)/src/ $(GLIB_CFLAGS) $(MYSQL_CFLAGS)
