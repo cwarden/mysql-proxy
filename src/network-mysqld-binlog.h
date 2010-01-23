@@ -125,6 +125,8 @@ typedef struct {
 	guint32 log_pos;
 	guint16 flags;
 
+	GString *raw; /* the byte-stream of the event w/o header */
+
 	union {
 		struct {
 			guint32 thread_id;

@@ -27,6 +27,7 @@
 #include <lualib.h>
 
 #include <unistd.h>
+#include <errno.h>
 
 #include "network-mysqld-binlog.h"
 #include "network-mysqld-myisam.h"
@@ -530,6 +531,12 @@ static int lua_mysqld_binlog_event_get(lua_State *L) {
 		return 1;
 	}
 
+	if (strleq(C("raw"), key, keysize)) {
+		/* push the event-block w/o the header as binary string */
+		lua_pushlstring(L, S(event->raw));
+		return 1;
+	}
+
 	if (strleq(C("query"), key, keysize)) {
 		return lua_mysqld_binlog_query_event_push(L, event);
 	}
@@ -587,7 +594,7 @@ int lua_mysqld_binlog_event_push(lua_State *L, network_mysqld_binlog_event *udat
 		return 0;
 	}
 
-	_udata = lua_newuserdata(L, sizeof(_udata));
+	_udata = lua_newuserdata(L, sizeof(*_udata));
 	_udata->event = udata;
 	_udata->free_me = free_me;
 
@@ -605,7 +612,7 @@ static int lua_mysqld_binlog_event_decode(lua_State *L) {
 	network_packet packet;
 	GString str;
 
-	str.str = s;
+	str.str = (char *)s;
 	str.len = s_len;
 
 	packet.data = &str;
@@ -615,13 +622,15 @@ static int lua_mysqld_binlog_event_decode(lua_State *L) {
 	network_mysqld_proto_get_binlog_event_header(&packet, event);
 
 	if (event->event_size < 19) {
-		g_critical("%s: event-size = %ld, expected = %"G_GUINT32_FORMAT,
+		g_critical("%s: event-size = %"G_GUINT32_FORMAT", expected = %"G_GUINT32_FORMAT,
 			G_STRLOC,
 			event->event_size,
 			19);
 		network_mysqld_binlog_event_free(event);
 		return 0;
 	}
+
+	g_string_assign_len(event->raw, packet.data->str + packet.offset, event->event_size - 19);
 
 	if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
 		network_mysqld_binlog_event_free(event);
@@ -653,7 +662,7 @@ static int lua_mysqld_binlog_next_event(lua_State *L) {
 	network_mysqld_proto_get_binlog_event_header(packet, event);
 
 	if (event->event_size < 19) {
-		g_critical("%s: event-size = %ld, expected = %"G_GUINT32_FORMAT,
+		g_critical("%s: event-size = %"G_GUINT32_FORMAT", expected = %"G_GUINT32_FORMAT,
 			G_STRLOC,
 			event->event_size,
 			19);
@@ -668,6 +677,8 @@ static int lua_mysqld_binlog_next_event(lua_State *L) {
 		return 0;
 	}
 	iter->off += 19;
+	
+	g_string_assign_len(event->raw, packet->data->str + packet->offset, event->event_size - 19);
 
 	if (network_mysqld_binlog_read_event(binlog, packet, event->event_size)) {
 		return 0;
@@ -691,7 +702,7 @@ static int lua_mysqld_binlog_next(lua_State *L) {
 	iter->binlog        = binlog;
 	iter->packet.data   = g_string_new(NULL);
 	iter->packet.offset = 0;
-	iter->off           = 4;
+	iter->off           = binlog->log_pos;
 	
 	g_string_set_size(iter->packet.data, 19 + 1);
 
@@ -858,7 +869,7 @@ static int lua_mysqld_binlog_event_encode(lua_State *L) {
 		event->event.format_event.log_header_len = 19;
 
 		event->event.format_event.event_header_sizes_len = ENUM_END_EVENT - 1;
-		event->event.format_event.event_header_sizes = g_new0(guint8, event->event.format_event.event_header_sizes_len);
+		event->event.format_event.event_header_sizes = g_new0(gchar, event->event.format_event.event_header_sizes_len);
 		event->event.format_event.event_header_sizes[START_EVENT_V3 - 1] = 0x38;
 		event->event.format_event.event_header_sizes[QUERY_EVENT - 1] = 0x0d;
 		event->event.format_event.event_header_sizes[STOP_EVENT - 1] = 0x00;
@@ -1189,8 +1200,11 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		network_mysqld_binlog_event_freeable *udata = (network_mysqld_binlog_event_freeable *)lua_touserdata(L, 2);
 		event = udata->event;
 	} else {
+		network_mysqld_binlog_event_freeable *_freeable;
+
 		lua_mysqld_binlog_event_encode(L);
-		event = lua_touserdata(L, -1);
+		_freeable = lua_touserdata(L, -1);
+		event = _freeable->event;
 	}
 
 	if (binlog->mode == BINLOG_MODE_WRITE) {
@@ -1207,7 +1221,7 @@ static int lua_mysqld_binlog_append(lua_State *L) {
 		/* a binlog created with .new() ... as we can't write to it, return a packet */
 		packet = g_string_new(NULL);
 		if (network_mysqld_proto_append_binlog_event(packet, event)) {
-			g_critical("%s", G_STRLOC);
+			g_critical("%s: _append_binlog_event failed", G_STRLOC);
 			g_string_free(packet, TRUE);
 			return 0;
 		}
@@ -1250,7 +1264,19 @@ static int lua_mysqld_binlog_seek(lua_State *L) {
 	network_mysqld_binlog *binlog = *(network_mysqld_binlog **)luaL_checkself(L);
 	goffset off = luaL_checknumber(L, 2);
 
+	if (off < 0) {
+		luaL_error(L, "binlog.seek(...) can't be negative");
+	}
+
 	binlog->log_pos = off;
+	if (binlog->fd != -1) {
+		if (binlog->log_pos != lseek(binlog->fd, binlog->log_pos, SEEK_SET)) {
+			luaL_error(L, "binlog.seek(%"G_GOFFSET_FORMAT") failed ... somehow: %s (%d)",
+					binlog->log_pos,
+					g_strerror(errno),
+					errno);
+		}
+	}
 
 	return 0;
 }

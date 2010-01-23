@@ -153,7 +153,7 @@ int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_b
 
 	packet = g_string_new(NULL);
 	if (network_mysqld_proto_append_binlog_event(packet, event)) {
-		g_critical("%s", G_STRLOC);
+		g_critical("%s: _append_binlog_event() failed", G_STRLOC);
 		g_string_free(packet, TRUE);
 		return -1;
 	}
@@ -240,6 +240,7 @@ network_mysqld_binlog_event *network_mysqld_binlog_event_new() {
 	network_mysqld_binlog_event *binlog;
 
 	binlog = g_new0(network_mysqld_binlog_event, 1);
+	binlog->raw = g_string_new(NULL);
 
 	return binlog;
 }
@@ -718,6 +719,8 @@ int network_mysqld_proto_get_binlog_event(network_packet *packet,
 
 void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event) {
 	if (!event) return;
+
+	g_string_free(event->raw, TRUE);
 
 	switch (event->event_type) {
 	case QUERY_EVENT:
