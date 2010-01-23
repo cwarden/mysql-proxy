@@ -105,7 +105,7 @@ assert(f:append({
 	server_id = 1,
 	type = "INCIDENT_EVENT",
 	incident = {
-		incident = 42,
+		incident_id = 42,
 		message = "The answer"
 	}
 }))
