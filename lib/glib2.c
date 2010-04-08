@@ -49,6 +49,36 @@ static int lua_g_checksum_md5 (lua_State *L) {
 	return 1;
 }
 
+static int lua_g_base64_encode (lua_State *L) {
+	size_t str_len;
+	const char *str = luaL_checklstring (L, 1, &str_len);
+	gchar *cs;
+
+	cs = g_base64_encode(str, str_len);
+
+	lua_pushstring(L, cs);
+
+	g_free(cs);
+
+	return 1;
+}
+
+static int lua_g_base64_decode (lua_State *L) {
+	size_t str_len;
+	const char *str = luaL_checkstring (L, 1);
+	gchar *cs;
+
+	cs = g_base64_decode(str, &str_len);
+
+	lua_pushlstring(L, cs, str_len);
+
+	g_free(cs);
+
+	return 1;
+}
+
+
+
 /*
 ** Assumes the table is on top of the stack.
 */
@@ -68,6 +98,8 @@ static void set_info (lua_State *L) {
 static const struct luaL_reg gliblib[] = {
 	{"usleep", lua_g_usleep},
 	{"md5", lua_g_checksum_md5},
+	{"base64_encode", lua_g_base64_encode},
+	{"base64_decode", lua_g_base64_decode},
 	{NULL, NULL},
 };
 

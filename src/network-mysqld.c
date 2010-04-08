@@ -1485,7 +1485,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 					/* if we don't need the resultset, forward it to the client */
 					if (!con->resultset_is_finished && !con->resultset_is_needed) {
 						/* check how much data we have in the queue waiting, no need to try to send 5 bytes */
-						if (con->client->send_queue->len > 64 * 1024) {
+						if (con->client && con->client->send_queue->len > 64 * 1024) {
 							con->state = CON_STATE_SEND_QUERY_RESULT;
 						}
 					}
@@ -1537,6 +1537,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 
 			switch (plugin_call(srv, con, con->state)) {
 			case NETWORK_SOCKET_SUCCESS:
+				ostate = 0; /* FIXME: do a proper loop if the hook added something to the send-queue */
 				break;
 			default:
 				con->state = CON_STATE_ERROR;
@@ -1549,19 +1550,23 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 			 * send error to the client
 			 * and close the connections afterwards
 			 *  */
-			switch (network_mysqld_write(srv, con->client)) {
-			case NETWORK_SOCKET_SUCCESS:
-				break;
-			case NETWORK_SOCKET_WAIT_FOR_EVENT:
-				WAIT_FOR_EVENT(con->client, EV_WRITE, NULL);
-				NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::send_error");
-				return;
-			case NETWORK_SOCKET_ERROR_RETRY:
-			case NETWORK_SOCKET_ERROR:
-				g_critical("%s.%d: network_mysqld_write(CON_STATE_SEND_ERROR) returned an error", __FILE__, __LINE__);
+			if (con->client) {
+				switch (network_mysqld_write(srv, con->client)) {
+				case NETWORK_SOCKET_SUCCESS:
+					break;
+				case NETWORK_SOCKET_WAIT_FOR_EVENT:
+					WAIT_FOR_EVENT(con->client, EV_WRITE, NULL);
+					NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::send_error");
+					return;
+				case NETWORK_SOCKET_ERROR_RETRY:
+				case NETWORK_SOCKET_ERROR:
+					g_critical("%s.%d: network_mysqld_write(CON_STATE_SEND_ERROR) returned an error", __FILE__, __LINE__);
 
-				con->state = CON_STATE_ERROR;
-				break;
+					con->state = CON_STATE_ERROR;
+					break;
+				}
+			} else {
+				g_debug("%s: reached CON_STATE_SEND_ERROR without a client to send it to", G_STRLOC);
 			}
 				
 			con->state = CON_STATE_ERROR;

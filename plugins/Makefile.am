@@ -2,6 +2,7 @@ SUBDIRS=\
 	admin \
 	proxy \
 	replicant \
+	master \
 	debug 
 # the cli plugin needs readline and we don't have it on all platforms
 # cli
