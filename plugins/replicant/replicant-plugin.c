@@ -254,7 +254,12 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_handshake) {
 
 	auth = network_mysqld_auth_response_new();
 
-	auth->capabilities    = CLIENT_BASIC_FLAGS;
+	auth->capabilities    = CLIENT_LONG_PASSWORD |
+		CLIENT_LONG_FLAG |
+		CLIENT_CONNECT_WITH_DB |
+		CLIENT_PROTOCOL_41 |
+		CLIENT_TRANSACTIONS |
+		CLIENT_SECURE_CONNECTION;
 	auth->charset         = shake->charset;
 	auth->max_packet_size = 1 * 1024 * 1024;
 
