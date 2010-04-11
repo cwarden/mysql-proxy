@@ -80,7 +80,15 @@
  *
  */
 typedef struct {
-	enum { REPCLIENT_BINLOG_GET_POS, REPCLIENT_BINLOG_DUMP } state;
+	enum {
+		REPCLIENT_BINLOG_GET_POS_SEND,
+		REPCLIENT_BINLOG_GET_POS_RECV,
+		REPCLIENT_SET_SEMISYNC_SEND,
+		REPCLIENT_SET_SEMISYNC_RECV,
+		REPCLIENT_BINLOG_DUMP_SEND,
+		REPCLIENT_BINLOG_DUMP_RECV,
+		REPCLIENT_BINLOG_ACK_SEND
+	} state;
 	char *binlog_file;
 	int binlog_pos;
 
@@ -98,6 +106,8 @@ struct chassis_plugin_config {
 
 	gchar *binlog_file;
 	int binlog_pos;
+
+	int use_semisync;
 };
 
 
@@ -121,6 +131,8 @@ static void plugin_con_state_free(plugin_con_state *st) {
 
 /**
  * decode the result-set of SHOW MASTER STATUS
+ *
+ * @return -1 on parse-error, -2 on no data, 0 on success
  */
 static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), network_mysqld_con *con) {
 	GList *chunk;
@@ -135,7 +147,10 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 
 	fields = network_mysqld_proto_fielddefs_new();
 	chunk = network_mysqld_proto_get_fielddefs(chunk, fields);
-	if (!chunk) return -1;
+	if (!chunk) {
+		network_mysqld_proto_fielddefs_free(fields);
+		return -2;
+	}
 
 	/* a data row */
 	while (NULL != (chunk = chunk->next)) {
@@ -145,6 +160,7 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 		packet.data = chunk->data;
 		packet.offset = 0;
 
+		err = err || network_mysqld_proto_skip_network_header(&packet);
 		err = err || network_mysqld_proto_peek_lenenc_type(&packet, &lenenc_type);
 		if (err) break; /* proto error */
 
@@ -168,6 +184,8 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 					if (!err) {
 						if (st->binlog_file) g_free(st->binlog_file);
 						st->binlog_file = s;
+					} else {
+						g_critical("%s", G_STRLOC);
 					}
 				} else if (i == 1) {
 					/* is a string */
@@ -177,6 +195,9 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 					err = err || network_mysqld_proto_get_string_len(&packet, &num, field_len);
 					if (!err) {
 						st->binlog_pos = g_ascii_strtoull(num, NULL, 10);
+						g_free(num);
+					} else {
+						g_critical("%s", G_STRLOC);
 					}
 				} else {
 					/* extra fields we don't expect */
@@ -184,6 +205,7 @@ static int network_mysqld_resultset_master_status(chassis *UNUSED_PARAM(chas), n
 				}
 			default:
 				/* we don't expect a ERR, EOF or NULL here */
+				g_assert_cmpint(lenenc_type, ==, NETWORK_MYSQLD_LENENC_TYPE_INT);
 				break;
 			}
 		}
@@ -268,6 +290,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_auth_result) {
 	network_packet packet;
 	guint8 status;
 	int err = 0;
+	plugin_con_state *st = con->plugin_con_state;
 
 	const char query_packet[] = 
 		"\x03"                    /* COM_QUERY */
@@ -315,8 +338,12 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_auth_result) {
 
 	g_string_free(g_queue_pop_tail(recv_sock->recv_queue->chunks), TRUE);
 
+	st->state = REPCLIENT_BINLOG_GET_POS_SEND;
 	send_sock = con->server;
+	network_mysqld_queue_reset(send_sock);
 	network_mysqld_queue_append(send_sock, send_sock->send_queue, C(query_packet));
+
+	st->state = REPCLIENT_BINLOG_GET_POS_RECV;
 
 	con->state = CON_STATE_SEND_QUERY;
 
@@ -356,9 +383,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 	chassis_plugin_config *config = con->config;
 	guint8 status;
 	int err = 0;
-	GString *query_packet;
-	int my_server_id = 2;
-	network_mysqld_binlog_dump *dump;
 
 	recv_sock = con->server;
 	send_sock = con->server;
@@ -381,76 +405,107 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 	err = err || network_mysqld_proto_skip_network_header(&packet);
 	err = err || network_mysqld_proto_peek_int8(&packet, &status);
 
-	switch (status) {
-	case MYSQLD_PACKET_ERR: {
-		network_mysqld_err_packet_t *err_packet;
+	/* parse the packet */
+	switch (st->state) {
+	case REPCLIENT_BINLOG_DUMP_RECV:
+		switch (status) {
+		case MYSQLD_PACKET_ERR: {
+			network_mysqld_err_packet_t *err_packet;
 
-		err_packet = network_mysqld_err_packet_new();
+			err_packet = network_mysqld_err_packet_new();
 
-		err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
 
-		if (!err) {
-			g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
-					G_STRLOC,
-					err_packet->errmsg->len ? err_packet->errmsg->str : "",
-					err_packet->errcode);
-		} 
-
-		network_mysqld_err_packet_free(err_packet);
-
-		return NETWORK_SOCKET_ERROR; }
-	case MYSQLD_PACKET_OK: 
-		switch (con->parse.command) {
-		case COM_BINLOG_DUMP: {
-			/* looks like the binlog dump started */
-			network_mysqld_binlog_event *event;
-			network_mysqld_binlog *binlog = st->binlog;
-
-			event = network_mysqld_binlog_event_new();
-
-			con->state = CON_STATE_ERROR; /* default to the error-case */
-
-			if (network_mysqld_proto_skip(&packet, 1)) {
-				g_critical("%s: ", G_STRLOC);
-			} else if (network_mysqld_proto_get_binlog_event_header(&packet, event)) {
-				g_critical("%s: ", G_STRLOC);
-			} else if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
-				g_debug_hexdump(G_STRLOC, S(packet.data));
-				g_critical("%s: failed to decode event %d",
+			if (!err) {
+				g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
 						G_STRLOC,
-						event->event_type);
+						err_packet->errmsg->len ? err_packet->errmsg->str : "",
+						err_packet->errcode);
 			} else {
-				if (config->lua_script) {
-					lua_State *L;
-					/* call lua to expose the event */
-
-					L = luaL_newstate();
-
-					luaL_openlibs(L);
-
-					if (0 != luaL_loadfile(L, config->lua_script)) {
-						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-						return NETWORK_SOCKET_ERROR;
-					}
-					if (0 != lua_pcall(L, 0, 0, 0)) {
-						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-						return NETWORK_SOCKET_ERROR;
-					}
-					lua_getglobal(L, "binlog_event_iterate");
-					lua_mysqld_binlog_push(L, binlog);
-					lua_mysqld_binlog_event_push(L, event, FALSE);
-					if (0 != lua_pcall(L, 2, 1, 0)) {
-						g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
-						return NETWORK_SOCKET_ERROR;
-					}
-
-					lua_close(L);
-				}
-			
-				con->state = CON_STATE_READ_QUERY_RESULT;
+				g_critical("%s: COM_BINLOG_DUMP failed: malformed ERR packet ", 
+						G_STRLOC);
 			}
 
-			network_mysqld_binlog_event_free(event);
+			network_mysqld_err_packet_free(err_packet);
+
+			return NETWORK_SOCKET_ERROR; }
+		case MYSQLD_PACKET_OK: {
+			/* looks like the binlog dump started */
+			network_mysqld_binlog *binlog = st->binlog;
+
+			con->state = CON_STATE_ERROR; /* default to the error-case */
+			g_debug_hexdump(G_STRLOC, S(packet.data));
+
+			if (network_mysqld_proto_skip(&packet, 1)) { /* the OK byte */
+				g_critical("%s: ", G_STRLOC);
+			} else {
+				guint8 semisync_magic;
+				guint8 semisync_flags = 0x00;
+
+				network_mysqld_binlog_event *event;
+
+				event = network_mysqld_binlog_event_new();
+
+				if (network_mysqld_proto_peek_int8(&packet, &semisync_magic)) {
+				} else if (semisync_magic == 0xef) {
+					network_mysqld_proto_skip(&packet, 1);
+					network_mysqld_proto_get_int8(&packet, &semisync_flags);
+				}
+
+				if (network_mysqld_proto_get_binlog_event_header(&packet, event)) {
+					g_critical("%s: ", G_STRLOC);
+				} else if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
+					g_debug_hexdump(G_STRLOC, S(packet.data));
+					g_critical("%s: failed to decode event %d",
+							G_STRLOC,
+							event->event_type);
+				} else {
+					/* track the log-pos and log-file for the ACK */
+					st->binlog->log_pos = event->log_pos;
+
+					switch (event->event_type) {
+					case ROTATE_EVENT:
+						if (st->binlog->filename) g_free(st->binlog->filename);
+
+						st->binlog->filename = g_strdup(event->event.rotate_event.binlog_file);
+					}
+					if (config->lua_script) {
+						lua_State *L;
+						/* call lua to expose the event */
+
+						L = luaL_newstate();
+
+						luaL_openlibs(L);
+
+						if (0 != luaL_loadfile(L, config->lua_script)) {
+							g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+							return NETWORK_SOCKET_ERROR;
+						}
+						if (0 != lua_pcall(L, 0, 0, 0)) {
+							g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+							return NETWORK_SOCKET_ERROR;
+						}
+						lua_getglobal(L, "binlog_event_iterate");
+						lua_mysqld_binlog_push(L, binlog);
+						lua_mysqld_binlog_event_push(L, event, FALSE);
+						if (0 != lua_pcall(L, 2, 1, 0)) {
+							g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
+							return NETWORK_SOCKET_ERROR;
+						}
+
+						lua_close(L);
+					}
+
+					if (semisync_flags & 0x01) {
+						/* ACK it */
+						st->state = REPCLIENT_BINLOG_ACK_SEND;
+					} else {
+						con->state = CON_STATE_READ_QUERY_RESULT; /* read the next event */
+					}
+				}
+				network_mysqld_binlog_event_free(event);
+
+			}
 
 			break; }
 		default:
@@ -458,17 +513,86 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			break;
 		}
 		break;
+	case REPCLIENT_BINLOG_GET_POS_RECV: {
+		switch (status) {
+		case MYSQLD_PACKET_ERR: {
+			network_mysqld_err_packet_t *err_packet;
+
+			err_packet = network_mysqld_err_packet_new();
+
+			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+			if (!err) {
+				g_critical("%s: SHOW MASTER STATUS failed: %s (errno = %d)", 
+						G_STRLOC,
+						err_packet->errmsg->len ? err_packet->errmsg->str : "",
+						err_packet->errcode);
+			} else {
+				g_critical("%s: SHOW MASTER STATUS failed: malformed ERR packet ", 
+						G_STRLOC);
+			}
+
+			network_mysqld_err_packet_free(err_packet);
+
+			return NETWORK_SOCKET_ERROR; }
+		default:
+			/* parse the result-set and get the 1st and 2nd column */
+
+			err = network_mysqld_resultset_master_status(chas, con);
+			if (-1 == err) {
+				g_critical("%s: parsing the master-status resultset failed", G_STRLOC);
+				return NETWORK_SOCKET_ERROR;
+			} else if (-2 == err) {
+				g_critical("%s: SHOW MASTER STATUS is empty", G_STRLOC);
+				return NETWORK_SOCKET_ERROR;
+			}
+
+			if (config->use_semisync) {
+				st->state = REPCLIENT_SET_SEMISYNC_SEND;
+			} else {
+				st->state = REPCLIENT_BINLOG_DUMP_SEND;
+			}
+			break;
+		}
+		break; }
+	case REPCLIENT_SET_SEMISYNC_RECV:
+		switch (status) {
+		case MYSQLD_PACKET_ERR: {
+			network_mysqld_err_packet_t *err_packet;
+
+			err_packet = network_mysqld_err_packet_new();
+
+			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+			if (!err) {
+				g_critical("%s: COM_BINLOG_DUMP failed: %s (errno = %d)", 
+						G_STRLOC,
+						err_packet->errmsg->len ? err_packet->errmsg->str : "",
+						err_packet->errcode);
+			} else {
+				g_critical("%s: COM_BINLOG_DUMP failed: malformed ERR packet ", 
+						G_STRLOC);
+			}
+
+			network_mysqld_err_packet_free(err_packet);
+
+			return NETWORK_SOCKET_ERROR; }
+		case MYSQLD_PACKET_OK: 
+			g_debug_hexdump(G_STRLOC, S(packet.data));
+			st->state = REPCLIENT_BINLOG_DUMP_SEND;
+			break;
+		default:
+			g_assert_not_reached();
+			break;
+		}
+		break;
 	default:
+		g_assert_not_reached();
 		break;
 	}
 
-	network_mysqld_queue_append(send_sock,
-			send_sock->send_queue, 
-			packet.data->str + NET_HEADER_SIZE, 
-			packet.data->len - NET_HEADER_SIZE);
-
-	/* ... */
-	if (is_finished) {
+	switch (st->state) {
+	case REPCLIENT_BINLOG_DUMP_SEND: {
 		/**
 		 * the resultset handler might decide to trash the send-queue
 		 * 
@@ -476,50 +600,77 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 		GString *query_packet;
 		int my_server_id = 2;
 		network_mysqld_binlog_dump *dump;
-		GString *s_packet;
 
-		switch (st->state) {
-		case REPCLIENT_BINLOG_GET_POS:
-			/* parse the result-set and get the 1st and 2nd column */
-
-			err = err || network_mysqld_resultset_master_status(chas, con);
-			if (err) {
-				g_message("%s", G_STRLOC);
-				return NETWORK_SOCKET_ERROR;
-			}
-
-			st->state = REPCLIENT_BINLOG_DUMP;
-
-			dump = network_mysqld_binlog_dump_new();
-			dump->server_id   = my_server_id;
-			if (config->binlog_file) {
-				dump->binlog_pos  = config->binlog_pos;
-				dump->binlog_file = g_strdup(config->binlog_file);
-			} else {
-				dump->binlog_pos  = st->binlog_pos;
-				dump->binlog_file = g_strdup(st->binlog_file);
-			}
-
-			query_packet = g_string_new(NULL);
-
-			network_mysqld_proto_append_binlog_dump(query_packet, dump);
-		       	
-			send_sock = con->server;
-			network_mysqld_queue_append(send_sock, send_sock->send_queue, S(query_packet));
-
-			network_mysqld_binlog_dump_free(dump);
-		
-			g_string_free(query_packet, TRUE);
-
-			con->state = CON_STATE_SEND_QUERY;
-			network_mysqld_con_reset_command_response_state(con);
-			break;
-		default:
-			g_debug_hexdump(G_STRLOC, S(packet.data));
-			g_critical("%s: %d", G_STRLOC, status);
-			con->state = CON_STATE_ERROR;
-			break;
+		dump = network_mysqld_binlog_dump_new();
+		dump->server_id   = my_server_id;
+		if (config->binlog_file) {
+			dump->binlog_pos  = config->binlog_pos;
+			dump->binlog_file = g_strdup(config->binlog_file);
+		} else {
+			dump->binlog_pos  = st->binlog_pos;
+			dump->binlog_file = g_strdup(st->binlog_file);
 		}
+
+		query_packet = g_string_new(NULL);
+
+		network_mysqld_proto_append_binlog_dump(query_packet, dump);
+	       	
+		send_sock = con->server;
+		network_mysqld_queue_reset(send_sock);
+		network_mysqld_queue_append(send_sock, send_sock->send_queue, S(query_packet));
+
+		network_mysqld_binlog_dump_free(dump);
+	
+		g_string_free(query_packet, TRUE);
+
+		st->state = REPCLIENT_BINLOG_DUMP_RECV;
+
+		con->state = CON_STATE_SEND_QUERY;
+		network_mysqld_con_reset_command_response_state(con);
+		break; }
+	case REPCLIENT_SET_SEMISYNC_SEND: {
+		const char query_packet[] = 
+			"\x03"                    /* COM_QUERY */
+			"SET @rpl_semi_sync_slave = 1"
+			;
+
+		send_sock = con->server;
+		network_mysqld_queue_reset(send_sock);
+		network_mysqld_queue_append(send_sock, send_sock->send_queue, C(query_packet));
+		con->state = CON_STATE_SEND_QUERY;
+		network_mysqld_con_reset_command_response_state(con);
+
+		st->state = REPCLIENT_SET_SEMISYNC_RECV;
+
+		break; }
+	case REPCLIENT_BINLOG_ACK_SEND: {
+		GString *ack_packet;
+		int i;
+
+		ack_packet = g_string_new(NULL);
+		network_mysqld_proto_append_int8(ack_packet, 0xef);
+		network_mysqld_proto_append_int64(ack_packet, st->binlog->log_pos);
+#if 1
+		g_string_append(ack_packet, st->binlog->filename);
+#else
+		for (i = 0; i < 1024; i++) g_string_append_c(ack_packet, '0xaa');
+#endif
+		network_mysqld_proto_append_int8(ack_packet, 0x00); /* NUL term */
+
+		g_message("%s: ACKing %s:%d",
+				G_STRLOC,
+				st->binlog->filename,
+				st->binlog->log_pos);
+
+		send_sock = con->server;
+		network_mysqld_queue_append(send_sock, send_sock->send_queue, S(ack_packet));
+		con->state = CON_STATE_SEND_QUERY; /* send to master */
+
+		g_string_free(ack_packet, TRUE);
+
+		st->state = REPCLIENT_BINLOG_DUMP_RECV;
+
+		break; }
 	}
 
 	if (chunk->data) g_string_free(chunk->data, TRUE);
@@ -644,8 +795,9 @@ static GOptionEntry * network_mysqld_replicant_plugin_get_options(chassis_plugin
 		{ "replicant-username",                  0, 0, G_OPTION_ARG_STRING, NULL, "username", "" },
 		{ "replicant-password",                  0, 0, G_OPTION_ARG_STRING, NULL, "password", "" },
 		{ "replicant-lua-script",                0, 0, G_OPTION_ARG_STRING, NULL, "filename", "" },
-		{ "replicant-binlog-file",               0, 0, G_OPTION_ARG_STRING, NULL, "filename", "" },
-		{ "replicant-binlog-pos",                0, 0, G_OPTION_ARG_INT, NULL, "filename", "" },
+		{ "replicant-binlog-file",               0, 0, G_OPTION_ARG_STRING, NULL, "binlog-filename", "" },
+		{ "replicant-binlog-pos",                0, 0, G_OPTION_ARG_INT, NULL, "binlog-position to start from", "" },
+		{ "replicant-use-semisync",              0, 0, G_OPTION_ARG_NONE, NULL, "use semisync", "" },
 		{ NULL,                       0, 0, G_OPTION_ARG_NONE,   NULL, NULL, NULL }
 	};
 
@@ -656,6 +808,7 @@ static GOptionEntry * network_mysqld_replicant_plugin_get_options(chassis_plugin
 	config_entries[i++].arg_data = &(config->lua_script);
 	config_entries[i++].arg_data = &(config->binlog_file);
 	config_entries[i++].arg_data = &(config->binlog_pos);
+	config_entries[i++].arg_data = &(config->use_semisync);
 	
 	return config_entries;
 }
