@@ -87,7 +87,8 @@ typedef struct {
 		REPCLIENT_SET_SEMISYNC_RECV,
 		REPCLIENT_BINLOG_DUMP_SEND,
 		REPCLIENT_BINLOG_DUMP_RECV,
-		REPCLIENT_BINLOG_ACK_SEND
+		REPCLIENT_BINLOG_ACK_SEND,
+		REPCLIENT_BINLOG_ACK_RECV
 	} state;
 	char *binlog_file;
 	int binlog_pos;
@@ -439,7 +440,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 			network_mysqld_binlog *binlog = st->binlog;
 
 			con->state = CON_STATE_ERROR; /* default to the error-case */
-			g_debug_hexdump(G_STRLOC, S(packet.data));
 
 			if (network_mysqld_proto_skip(&packet, 1)) { /* the OK byte */
 				g_critical("%s: ", G_STRLOC);
@@ -460,7 +460,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 				if (network_mysqld_proto_get_binlog_event_header(&packet, event)) {
 					g_critical("%s: ", G_STRLOC);
 				} else if (network_mysqld_proto_get_binlog_event(&packet, binlog, event)) {
-					g_debug_hexdump(G_STRLOC, S(packet.data));
 					g_critical("%s: failed to decode event %d",
 							G_STRLOC,
 							event->event_type);
@@ -514,6 +513,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 
 			break; }
 		default:
+			g_debug_hexdump(G_STRLOC, S(packet.data));
 			g_assert_not_reached();
 			break;
 		}
@@ -583,8 +583,37 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 
 			return NETWORK_SOCKET_ERROR; }
 		case MYSQLD_PACKET_OK: 
-			g_debug_hexdump(G_STRLOC, S(packet.data));
 			st->state = REPCLIENT_BINLOG_DUMP_SEND;
+			break;
+		default:
+			g_assert_not_reached();
+			break;
+		}
+		break;
+	case REPCLIENT_BINLOG_ACK_RECV:
+		switch (status) {
+		case MYSQLD_PACKET_ERR: {
+			network_mysqld_err_packet_t *err_packet;
+
+			err_packet = network_mysqld_err_packet_new();
+
+			err = err || network_mysqld_proto_get_err_packet(&packet, err_packet);
+
+			if (!err) {
+				g_critical("%s: SEMI_SYNC_ACK failed: %s (errno = %d)", 
+						G_STRLOC,
+						err_packet->errmsg->len ? err_packet->errmsg->str : "",
+						err_packet->errcode);
+			} else {
+				g_critical("%s: SEMI_SYNC_ACK failed: malformed ERR packet ", 
+						G_STRLOC);
+			}
+
+			network_mysqld_err_packet_free(err_packet);
+
+			return NETWORK_SOCKET_ERROR; }
+		case MYSQLD_PACKET_OK: 
+			st->state = REPCLIENT_BINLOG_DUMP_RECV;
 			break;
 		default:
 			g_assert_not_reached();
@@ -658,6 +687,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 #if 1
 		g_string_append(ack_packet, st->binlog->filename);
 #else
+		/* bug #52748 */
 		for (i = 0; i < 1024; i++) g_string_append_c(ack_packet, '0xaa');
 #endif
 		network_mysqld_proto_append_int8(ack_packet, 0x00); /* NUL term */
@@ -668,12 +698,13 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 				st->binlog->log_pos);
 
 		send_sock = con->server;
+		network_mysqld_queue_reset(send_sock); /* after we are done, the next packet we get will be packet-id==0 */
 		network_mysqld_queue_append(send_sock, send_sock->send_queue, S(ack_packet));
 		con->state = CON_STATE_SEND_QUERY; /* send to master */
 
 		g_string_free(ack_packet, TRUE);
 
-		st->state = REPCLIENT_BINLOG_DUMP_RECV;
+		st->state = REPCLIENT_BINLOG_ACK_RECV;
 
 		break; }
 	}
