@@ -94,6 +94,7 @@ typedef struct {
 	int binlog_pos;
 
 	network_mysqld_binlog *binlog;
+	lua_State *L;
 } plugin_con_state;
 
 struct chassis_plugin_config {
@@ -126,6 +127,8 @@ static void plugin_con_state_free(plugin_con_state *st) {
 	if (!st) return;
 
 	if (st->binlog_file) g_free(st->binlog_file);
+
+	if (st->L) lua_close(st->L);
 
 	g_free(st);
 }
@@ -473,7 +476,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 
 						st->binlog->filename = g_strdup(event->event.rotate_event.binlog_file);
 					}
-					if (config->lua_script) {
+					if (config->lua_script && !st->L) {
 						lua_State *L;
 						/* call lua to expose the event */
 
@@ -489,6 +492,12 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 							g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
 							return NETWORK_SOCKET_ERROR;
 						}
+						st->L = L;
+					}
+
+					if (st->L) {
+						lua_State *L = st->L;
+
 						lua_getglobal(L, "binlog_event_iterate");
 						lua_mysqld_binlog_push(L, binlog);
 						lua_mysqld_binlog_event_push(L, event, FALSE);
@@ -496,8 +505,6 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 							g_critical("%s: %s", G_STRLOC, lua_tostring(L, -1));
 							return NETWORK_SOCKET_ERROR;
 						}
-
-						lua_close(L);
 					}
 
 					if (semisync_flags & 0x01) {
