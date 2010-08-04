@@ -3,6 +3,7 @@ SUBDIRS=base bugs
 TESTS_ENVIRONMENT = \
 	MYSQL_TEST_BIN="${MYSQL_TEST_BIN}" \
 	LUA_USER_PATH="${top_srcdir}/lib/?.lua" \
+	LUA_PATH="${top_srcdir}/tests/suite/?.lua" \
 	LUA_CPATH=".libs/?.@DYNLIB_LUA_SUFFIX@;${top_builddir}/lib/.libs/?.@DYNLIB_LUA_SUFFIX@" \
 	@DYNLIB_PATH_VAR@="${top_builddir}/src/.libs/:${@DYNLIB_PATH_VAR@}" \
 	MYSQL_PROXY_VERSION="${PACKAGE_VERSION}" \
@@ -24,6 +25,9 @@ lua_runner_CFLAGS=${LUA_CFLAGS}
 
 EXTRA_DIST=\
 	run-tests.lua \
+	fileutils.lua \
+	shellutils.lua \
+	testutils.lua \
 	lua-tests-wrapper.sh.in \
 	CMakeLists.txt
 
