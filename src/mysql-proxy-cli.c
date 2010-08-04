@@ -115,6 +115,7 @@ typedef struct {
 	GOptionEntry *config_entries;
 
 	gchar *pid_file;
+	gboolean pid_file_is_created;
 
 	gchar *plugin_dir;
 	gchar **plugin_names;
@@ -163,7 +164,14 @@ void chassis_frontend_free(chassis_frontend_t *frontend) {
 
 	if (frontend->base_dir) g_free(frontend->base_dir);
 	if (frontend->user) g_free(frontend->user);
-	if (frontend->pid_file) g_free(frontend->pid_file);
+	if (frontend->pid_file) {
+		/* only try to delete the PID if we created it
+		 */
+		if (frontend->pid_file_is_created) {
+			g_unlink(frontend->pid_file);
+		}
+		g_free(frontend->pid_file);
+	}
 	if (frontend->log_level) g_free(frontend->log_level);
 	if (frontend->plugin_dir) g_free(frontend->plugin_dir);
 
@@ -561,6 +569,7 @@ int main_cmdline(int argc, char **argv) {
 
 			GOTO_EXIT(EXIT_FAILURE);
 		}
+		frontend->pid_file_is_created = TRUE; /* track that we created the PID file successfully and can delete it */
 	}
 
 	/* the message has to be _after_ the g_option_content_parse() to 
