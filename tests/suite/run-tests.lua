@@ -225,7 +225,7 @@ function TestRunner:register_tests(suites)
 				if testname then
 					local is_skipped = false
 
-					if self.tests_regex and not testname:match(self.tests_regex) then
+					if (self.tests_regex and not testname:match(self.tests_regex)) or tests_to_skip[testname] then
 						is_skipped = true
 					end
 
@@ -233,6 +233,7 @@ function TestRunner:register_tests(suites)
 					test.testname = testname
 					test.suite_srcdir = suite_srcdir
 					test.testenv = self.testenv
+					test.skipped = is_skipped
 
 					self.tests[#self.tests + 1] = test 
 				end
@@ -243,6 +244,7 @@ end
 
 function TestRunner:run_all()
 	local exitcode = 0
+
 	for i, test in ipairs(self.tests) do
 		shellutils.print_verbose("# >> " .. test.testname .. " started")
 
@@ -408,7 +410,6 @@ function Processes:shutdown_all()
 end
 
 Test = {
-	testname = nil,
 }
 function Test:new(o)
 	-- create a new process object
@@ -417,13 +418,16 @@ function Test:new(o)
 	setmetatable(o, self)
 	self.__index = self
 
+	self.skipped = false
+	self.testname = nil
+
 	return o
 end
 
 ---
 -- @return true[, msg] if test should be skipped, false otherwise
 function Test:is_skipped()
-	return false
+	return self.skipped
 end
 
 function Test:setup()
@@ -439,7 +443,7 @@ function Test:run()
 
 	if is_skipped then
 		print(('skip %s %s'):format(
-			testname,
+			self.testname,
 			skip_msg or 'no reason given'))
 		return 77
 	end
