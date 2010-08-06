@@ -30,11 +30,11 @@
 require("lfs")
 require("glib2")
 require("posix")
-require("fileutils")
-require("shellutils")
-require("testutils")
-require("process")
-require("processmanager")
+local fileutils = require("testenv.fileutils")
+local shellutils = require("testenv.shellutils")
+local testutils = require("testenv.testutils")
+local process   = require("testenv.process")
+local processmanager = require("testenv.processmanager")
 
 -- 
 -- a set of user variables which can be overwritten from the environment
@@ -445,7 +445,7 @@ function MySQLProxyTest:run_test()
 	local result = 0
 
 	local proc = process:new()
-	local ret = proc:execute(
+	local ret = proc:popen(
 		self.testenv.MYSQL_TEST_BIN,
 		{
 			['MYSQL_USER']      = self.testenv.MYSQL_USER,
@@ -468,7 +468,16 @@ function MySQLProxyTest:run_test()
 			["logdir"]      = self.suite_builddir, -- the .result dir might not be writable
 		})
 
-	return ret
+	if (ret == "ok") then
+		print(("ok # %s"):format(self.testname))
+		return 0
+	elseif (ret == "not ok") then
+		print(("not ok # %s"):format(self.testname))
+		return -1
+	else 
+		print(("not ok # (%s) %s"):format(ret, self.testname))
+		return -1
+	end
 end
 
 local runner = TestRunner:new()
