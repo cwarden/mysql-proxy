@@ -1,4 +1,4 @@
-SUBDIRS=base bugs
+SUBDIRS=testenv base bugs
 
 TESTS_ENVIRONMENT = \
 	MYSQL_TEST_BIN="${MYSQL_TEST_BIN}" \
