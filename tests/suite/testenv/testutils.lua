@@ -1,4 +1,4 @@
-module("testutils", package.seeall)
+module("testenv.testutils", package.seeall)
 
 --
 -- Global variables that can be referenced from .options files

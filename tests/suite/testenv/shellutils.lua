@@ -1,4 +1,4 @@
-module("shellutils", package.seeall)
+module("testenv.shellutils", package.seeall)
 
 VERBOSE = tonumber(os.getenv("VERBOSE")) or 0
 

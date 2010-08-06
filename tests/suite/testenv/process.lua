@@ -1,4 +1,9 @@
-module("process", package.seeall)
+local _G = _G
+
+local shellutils = require("testenv.shellutils")
+local glib2 = require("glib2")
+
+module("testenv.process")
 
 ---
 -- life cycle management for processes
@@ -11,7 +16,7 @@ function new(self, o)
 	-- create a new process object
 	--
 	o = o or {}
-	setmetatable(o, self)
+	_G.setmetatable(o, self)
 	self.__index = self
 	return o
 end
@@ -27,14 +32,14 @@ end
 ---
 -- read a PID from a pidfile
 function set_pid_from_pidfile(self, pid_file_name)
-	local fh, errmsg = io.open(pid_file_name, 'r')
+	local fh, errmsg = _G.io.open(pid_file_name, 'r')
 	if not fh then
 		return false, errmsg
 	end
 	local pid = fh:read("*n")
 	fh:close()
 
-	if type(pid) ~= "number" then
+	if _G.type(pid) ~= "number" then
 		return false
 	end
 	if not pid or pid == 0 then
@@ -47,9 +52,9 @@ function set_pid_from_pidfile(self, pid_file_name)
 end
 
 function is_running(self)
-	assert(self.pid)
+	_G.assert(self.pid)
 
-	local ret = os.execute("kill -0 ".. self.pid .."  2> /dev/null")
+	local ret = _G.os.execute("kill -0 ".. self.pid .."  2> /dev/null")
 
 	return (ret == 0)
 end
@@ -82,7 +87,7 @@ function wait_running(self, pid_file_name)
 end
 
 function wait_down(self)
-	assert(self.pid)
+	_G.assert(self.pid)
 	local rounds = 0
 	local wait_interval_ms = 200
 
@@ -102,7 +107,7 @@ function shutdown(self)
 	--
 	-- win32 has tasklist and taskkill on the shell
 	if self.pid then
-		return os.execute("kill -TERM ".. self.pid)
+		return _G.os.execute("kill -TERM ".. self.pid)
 	end
 end
 
@@ -122,6 +127,33 @@ function execute(self, cmd, env, opts)
 
 	local cmdline = env_str .. " " .. cmd .. " " .. opts_str
 	shellutils.print_verbose("$ " .. cmdline)
-	return os.execute(cmdline)
+	return _G.os.execute(cmdline)
+end
+
+function popen(self, cmd, env, opts)
+	local env_str = ""
+	local opts_str = ""
+
+	if env then
+		env_str = shellutils.env_tostring(env)
+	end
+
+	if opts then
+		opts_str = shellutils.options_tostring(opts)
+	end
+
+	local cmdline = env_str .. " " .. cmd .. " " .. opts_str
+	shellutils.print_verbose("$ " .. cmdline)
+
+	local fh = _G.io.popen(cmdline)
+	_G.assert(fh, 'error executing '.. cmdline)
+	local result = ''
+	local line = fh:read()
+	while line do
+		result = result .. line
+		line = fh:read()
+	end
+	fh:close()
+	return result
 end
 

@@ -1,6 +1,6 @@
-module("fileutils", package.seeall)
-
 require("lfs")
+
+module("testenv.fileutils", package.seeall)
 
 ---
 -- check if the file exists and is readable 
