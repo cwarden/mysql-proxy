@@ -70,26 +70,3 @@ function print_verbose(msg, min_level)
 	end
 end
 
-function alternative_execute (cmd)
-	print_verbose(cmd)
-
-	local fh = io.popen(cmd)
-	assert(fh, 'error executing '.. cmd)
-	local result = ''
-	local line = fh:read()
-	while line do
-		result = result .. line
-		line = fh:read()
-	end
-	fh:close()
-	return result
-end
-
-function conditional_execute (cmd)
-	if USE_POPEN then
-		return alternative_execute(cmd)
-	else
-		return os_execute(cmd)
-	end
-end
-
