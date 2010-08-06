@@ -33,132 +33,8 @@ require("posix")
 require("fileutils")
 require("shellutils")
 require("testutils")
-
----
--- life cycle management for processes
---
--- * PID files
--- * wait until they are started
--- * shutting down
---
-Process = { }
-function Process:new(o)
-	-- create a new process object
-	--
-	o = o or {}
-	setmetatable(o, self)
-	self.__index = self
-	return o
-end
-
-function Process:get_pid()
-	return self.pid
-end
-
-function Process:set_pid(pid)
-	self.pid = pid
-end
-
----
--- read a PID from a pidfile
-function Process:set_pid_from_pidfile(pid_file_name)
-	local fh, errmsg = io.open(pid_file_name, 'r')
-	if not fh then
-		return false, errmsg
-	end
-	local pid = fh:read("*n")
-	fh:close()
-
-	if type(pid) ~= "number" then
-		return false
-	end
-	if not pid or pid == 0 then
-		return false
-	end
-
-	self:set_pid(pid)
-
-	return true
-end
-
-function Process:is_running()
-	assert(self.pid)
-
-	local ret = os.execute("kill -0 ".. self.pid .."  2> /dev/null")
-
-	return (ret == 0)
-end
-
----
--- wait until the process is up and running
---
-function Process:wait_running(pid_file_name)
-	-- try to get a PID
-	local rounds = 0
-	local wait_interval_ms = 100
-
-	while not self.pid and rounds < 10 do
-		self:set_pid_from_pidfile(pid_file_name)
-		if self.pid then
-			break
-		end
-
-		glib2.usleep(wait_interval_ms * 1000) -- wait until process is gone
-		rounds = rounds + 1
-		shellutils.print_verbose(("Process:wait_running(pid = %s) waited %dms"):format(pid_file_name, wait_interval_ms * rounds))
-	end
-
-	-- check if the process is actually alive
-	if not self.pid or not self:is_running() then
-		return false
-	end
-
-	return true
-end
-
-function Process:wait_down()
-	assert(self.pid)
-	local rounds = 0
-	local wait_interval_ms = 200
-
-	-- wait until the proc in the pid file is dead
-	-- the shutdown takes at about 500ms
-	while self:is_running() do
-		glib2.usleep(wait_interval_ms * 1000) -- wait until process is gone
-		rounds = rounds + 1
-		shellutils.print_verbose(("Process:wait_down(pid = %d) waited %dms"):format(self.pid, wait_interval_ms * rounds))
-	end
-
-	return true
-end
-
-function Process:shutdown()
-	-- shut dowm the proxy
-	--
-	-- win32 has tasklist and taskkill on the shell
-	if self.pid then
-		return os.execute("kill -TERM ".. self.pid)
-	end
-end
-
----
--- execute a process 
-function Process:execute(cmd, env, opts)
-	local env_str = ""
-	local opts_str = ""
-
-	if env then
-		env_str = shellutils.env_tostring(env)
-	end
-
-	if opts then
-		opts_str = shellutils.options_tostring(opts)
-	end
-
-	local cmdline = env_str .. " " .. cmd .. " " .. opts_str
-	shellutils.print_verbose("$ " .. cmdline)
-	return os.execute(cmdline)
-end
+require("process")
+require("processmanager")
 
 -- 
 -- a set of user variables which can be overwritten from the environment
@@ -373,44 +249,9 @@ function MockBackend:chain_with_frontend(frontend)
 	frontend:add_backend(self.proxy_address)
 end
 
-Processes = {
-	processes = { }
-}
-function Processes:new(o)
-	-- create a new processes object
-	--
-	o = o or {}
-	setmetatable(o, self)
-	self.__index = self
-	return o
-end
-
-function Processes:add(proc)
-	table.insert(self.processes, proc)
-end
-
----
--- stop all monitored
---
-function Processes:shutdown_all()
-	-- shuts down every proxy in the proxy list
-	--
-	for proc_name, proc in pairs(self.processes) do
-		if proc.pid then
-			proc:shutdown()
-		end
-	end
-
-	for proc_name, proc in pairs(self.processes) do
-		if proc.pid then
-			proc:wait_down()
-		end
-		self.processes[proc_name] = nil
-	end
-end
-
 Test = {
 }
+
 function Test:new(o)
 	-- create a new process object
 	--
@@ -448,7 +289,7 @@ function Test:run()
 		return 77
 	end
 
-	self.procs = Processes:new()
+	self.procs = processmanager:new()
 
 	local ret, errmsg = self:setup()
 	if not ret then
@@ -499,7 +340,7 @@ function chain_proxy(backend_filenames, script_filename)
 			["pid-file"]         = ("%s/chain-%d.pid"):format(self.testenv.basedir, backend_ndx)
 		})
 
-		local proc  = Process:new()
+		local proc  = process:new()
 		local ret = proc:execute(mock:get_command(),
 			mock:get_env(),
 			mock_args)
@@ -532,7 +373,7 @@ function chain_proxy(backend_filenames, script_filename)
 		["proxy-lua-script"] = script_filename,
 	})
 
-	local proc  = Process:new()
+	local proc  = process:new()
 	local ret = proc:execute(proxy:get_command(),
 		proxy:get_env(),
 		proxy_args)
@@ -556,7 +397,7 @@ function MySQLProxyTest:start_proxy(script_filename)
 		["proxy-lua-script"] = script_filename,
 	})
 
-	local proc  = Process:new()
+	local proc  = process:new()
 	local ret = proc:execute(proxy:get_command(),
 		proxy:get_env(),
 		proxy_args)
@@ -603,7 +444,7 @@ end
 function MySQLProxyTest:run_test()
 	local result = 0
 
-	local proc = Process:new()
+	local proc = process:new()
 	local ret = proc:execute(
 		self.testenv.MYSQL_TEST_BIN,
 		{
