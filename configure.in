@@ -407,6 +407,7 @@ AC_CONFIG_FILES([Makefile \
 		 lib/proxy/Makefile \
 		 tests/Makefile \
 		 tests/suite/Makefile \
+		 tests/suite/testenv/Makefile \
 		 tests/suite/base/Makefile \
 		 tests/suite/base/t/Makefile \
 		 tests/suite/base/r/Makefile \
