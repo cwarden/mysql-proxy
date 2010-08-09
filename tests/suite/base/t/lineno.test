@@ -17,4 +17,8 @@
 #  02110-1301  USA
 # 
 #  $%ENDLICENSE%$
+
+# fetch the Lua version of the current file-name  
+--let current_backtrace_filename = query_get_value("SELECT current_backtrace_filename", "filename", 1)
+--replace_result $current_backtrace_filename "[string \"lineno.lua\"]"
 SELECT backtrace;

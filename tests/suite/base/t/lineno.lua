@@ -50,6 +50,19 @@ function read_query(packet)
 
 			}
 		}
+	elseif packet:sub(2) == "SELECT current_backtrace_filename" then
+		proxy.response = {
+			type = proxy.MYSQLD_PACKET_OK,
+			resultset = {
+				fields = {
+					{ name = "filename", type = proxy.MYSQL_TYPE_STRING }
+				},
+				rows = { 
+					{ debug.getinfo(1, "S").short_src }
+				}
+
+			}
+		}
 	else
 		proxy.response = {
 			type = proxy.MYSQLD_PACKET_ERR,
