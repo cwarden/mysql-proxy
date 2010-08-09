@@ -137,7 +137,7 @@ function TestRunner:run_all()
 
 		shellutils.print_verbose("# << (exitcode = " .. r .. ")" )
 
-		if r ~= 0 and exitcode == 0 then
+		if r ~= 0 and r ~= 77 and exitcode == 0 then
 			exitcode = r
 		end
 
