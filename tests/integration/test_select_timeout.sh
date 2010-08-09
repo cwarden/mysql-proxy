@@ -129,7 +129,7 @@ function poweroff_vm {
 # this function does the actual "query" to the DB via the proxy
 function do_sleep() {
 	$MYSQL -h$PROXY_NAME -P$PROXY_PORT -u$DBUSER -p$DBPASS \
-		-e "select sleep ($1);" 2>&1 #>/dev/null 2>&1
+		-e "select sleep ($1);" 2>&1
 }
 
 # this is the initial "can I reach the DB" test
