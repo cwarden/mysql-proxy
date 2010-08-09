@@ -52,6 +52,10 @@
 # - inside the VM: an installed instance of mysqld listening on port
 #   $PROXY_PORT (you are free to chose one, default is 3306)
 #
+#   Although this script makes an effort to bring up a VM that's not
+#   running, this was not the focus of our efforts here, so it's probably
+#   best to have it running before starting the script.
+#
 #   MAKE SURE that myslqd is automatically started when the VM is started; I 
 #   believe that mysql standard installation takes care of this.
 #
@@ -64,8 +68,8 @@
 # mandatory ones are marked with a ! below, others have a "reasonable" default
 # ============================================================
 # !VM_NAME      the name (or UUID) of the Virtual machine
-# !DBUSER       user to connect to DB as.
-# !DBPASS       password for DBUSER
+# DBUSER        user to connect to DB as.
+# DBPASS        password for DBUSER
 # MYSQL         the (path and) name of the mysql binary.
 # VBOXMG        the (path and) name of the mysql binary.
 # PROXY_NAME    usually '127.0.0.1' (note: don't use localhost! this causes
@@ -75,6 +79,7 @@
 # PROXY_PORT    port the proxy (not! the DB) is listening on
 # SLEEP_TIME    sleep time (in seconds) for the availability test
 # QUERY_TIME    duration of "long query" in seconds
+# VM_START_TIME time it takes the VM to start (from "power off" mode)
 #
 # if you want to see the script's steps as it chugs along, set DBG=y
 # ============================================================
@@ -85,9 +90,10 @@
 # $ script VAR=VALUE
 #
 # EXIT VALUES:
-# 0     success
-# 255   failure
-
+# 0        success
+# != 0     failure:
+#   255      "normal" failure (binary inaccessible, etc.)
+#   128+n	 if terminated by signal n (eg, 143 for SIGTERM)
 
 # Function definitions
 #
@@ -102,28 +108,51 @@ function get_vm_state() {
 function resume_vm() {
 	VBoxManage controlvm $VM_NAME resume >/dev/null 2>&1
 }
+function save_vm() {
+	VBoxManage controlvm $VM_NAME savestate >/dev/null 2>&1
+}
 function pause_vm() {
 	VBoxManage controlvm $VM_NAME pause >/dev/null 2>&1
 }
 function start_vm() {
-	VBoxManage startvm $VM_NAME >/dev/null 2>&1
+	# we use --type vrdp in the hopes of not getting held up
+	# by any alerts awaiting a key press/mouse click
+	VBoxManage startvm $VM_NAME --type vrdp >/dev/null 2>&1
+
+	# starting a VM can take considerable time ... 
+	sleep $VM_START_TIME
 }
 function poweroff_vm {
-	VBoxManage controlvm $VM_NAME poweroff >/dev/null 2>&1
+	VBoxManage controlvm $VM_NAME acpipowerbutton >/dev/null 2>&1
 }
 
 # this function does the actual "query" to the DB via the proxy
 function do_sleep() {
-	echo "select sleep ($1)" | \
-		$MYSQL -h$PROXY_NAME -P$PROXY_PORT -u$DBUSER -p$DBPASS >/dev/null 2>&1
+	$MYSQL -h$PROXY_NAME -P$PROXY_PORT -u$DBUSER -p$DBPASS \
+		-e "select sleep ($1);" 2>&1 #>/dev/null 2>&1
 }
 
 # this is the initial "can I reach the DB" test
 # since even this could in theory hang, we need to "watch" it and
 # report failure if it does.
+# we also need to handle the case here that for some reason we 
+# get an error back immediately from mysql; in this case, the subshell
+# needs to emit a message and kill "this" shell, since there's no other
+# means of communicating this failure "up" (that I could find). This
+# will cause the shell to return 128+n (n ... signal number)
+# NB: we cannot perform this trick in the real test, as mysql's error
+# code might well be the indication we're looking for that the
+# connection timed out.
 function sleep_test() {
-	( do_sleep $SLEEP_TIME
-	  return 0) &
+	MYPID=$$
+	( MSG=$(do_sleep $SLEEP_TIME)
+	  STAT=$?
+	  if [ ! $STAT -eq 0 ]; then
+		  echo "cant't talk to mysql server at $PROXY_NAME:$PROXY_PORT ...:"
+		  echo $MSG
+		  kill -TERM $MYPID # subshell runs as new process, we're killing parent
+	  fi
+	  return $?) &
 	S_PID=$!
 	sleep $((2 * $SLEEP_TIME))	# use a generous timeout
 
@@ -134,7 +163,7 @@ function sleep_test() {
 	# look as straightforward as I'd thought)
 	kill -0 $S_PID >/dev/null 2>&1
 	if [ $? -eq 0 ]; then
-		echo "$MYSQL seems to be hanging, cannot continue"
+		echo "$MYSQL (pid $S_PID) seems to be hanging, cannot continue"
 		exit 255
 	fi
 	return 0
@@ -148,7 +177,7 @@ function sleep_test() {
 # we attempt to resume the VM at all exit points of this function
 function real_test () {
 	(   T1=$SECONDS
-		do_sleep $QUERY_TIME
+		MSG=$(do_sleep $QUERY_TIME)
 		T2=$SECONDS
 		DIFF=$(($T2 - $T1))
 
@@ -179,10 +208,13 @@ function real_test () {
 # defaults:
 DEF_PROXY_PORT=4040
 DEF_PROXY_NAME=127.0.0.1
-DEF_MYSQL_PATH=/bin/mysql
+DEF_MYSQL_PATH=/usr/local/mysql/bin/mysql
 DEF_VBOXMG_PATH=/bin/VBoxManage
 DEF_SLEEP_TIME=3
 DEF_QUERY_TIME=120
+DEF_DBUSER='"root"'
+DEF_DBPASS='""'
+DEF_VM_START_TIME=20
 
 # others
 VM_STATE=""
@@ -191,6 +223,7 @@ VM_STATE=""
 vm_was_up=1 	# 1 == false!
 vm_was_paused=1
 vm_was_down=1
+vm_was_saved=1
 
 # evaluate arguments of form key=value
 while [ $# -gt 0 ]; do
@@ -202,15 +235,16 @@ done
 # missing values where we have no defaults
 # mandatory ones first:
 VM_NAME=${VM_NAME:?"Please set the name or UUID of the Virtual Machine"}
-DBUSER=${DBUSER:?"this variable needs to be set"}
-DBPASS=${DBPASS:?"this variable needs to be set"}
 # optional settings
+DBUSER=${DBUSER:-$DEF_DBUSER}
+DBPASS=${DBPASS:-$DEF_DBPASS}
 MYSQL=${MYSQL:-$DEF_MYSQL_PATH}
 VBOXMG=${VBOXMG:-$DEF_VBOXMG_PATH}
 PROXY_NAME=${PROXY_NAME:-$DEF_PROXY_NAME}
 PROXY_PORT=${PROXY_PORT:-$DEF_PROXY_PORT}
 SLEEP_TIME=${SLEEP_TIME:-$DEF_SLEEP_TIME}
 QUERY_TIME=${QUERY_TIME:-$DEF_QUERY_TIME}
+VM_START_TIME=${VM_START_TIME:-$DEF_VM_START_TIME}
 
 if [ "$DBG" = "y" ]; then
 	set -x
@@ -233,9 +267,12 @@ fi
 VM_STATE=$(get_vm_state)
 if [ $VM_STATE = running ]; then
 	vm_was_up=0		# remember to not take it down after test
-elif [ $VM_STATE = paused ] ; then
+elif [ $VM_STATE = paused ]; then
 	vm_was_paused=0
 	resume_vm
+elif [ $VM_STATE = saved ]; then
+	vm_was_saved=0
+	start_vm
 else
 	vm_was_down=0	# shut it down after we're done
 	start_vm
@@ -264,6 +301,8 @@ if [ $vm_was_paused ]; then
 	pause_vm
 elif [ $vm_was_down ]; then
 	stop_vm
+elif [ $vm_was_saved ]; then
+	save_vm
 fi
 echo ok
 exit 0
