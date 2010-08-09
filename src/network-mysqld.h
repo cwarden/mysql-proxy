@@ -345,10 +345,13 @@ struct network_mysqld_con {
 
 	/**
 	 * track the timestamps of the processing of the connection
-	 *
-	 * 
 	 */
 	chassis_timestamps_t *timestamps;
+
+	/** 
+	 * track the number of consecutive timeouts on a connection
+	 */
+	guint	timeout_count;
 };
 
 

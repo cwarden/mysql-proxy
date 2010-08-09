@@ -73,6 +73,7 @@
 
 
 #include "network-mysqld.h"
+#include "network-socket.h"
 #include "network-mysqld-proto.h"
 #include "sys-pedantic.h"
 
@@ -136,6 +137,9 @@ typedef struct {
 	char *lua_path;
 	char *lua_cpath;
 	char **lua_subdirs;
+
+	long network_timeout;
+	long network_retries;
 } chassis_frontend_t;
 
 /**
@@ -233,6 +237,16 @@ int chassis_frontend_set_chassis_options(chassis_frontend_t *frontend, chassis_o
 
 	chassis_options_add(opts,
 		"lua-cpath",                0, 0, G_OPTION_ARG_STRING, &(frontend->lua_cpath), "set the LUA_CPATH", "<...>");
+
+	chassis_options_add(opts,
+		"network-timeout",          0, 0, G_OPTION_ARG_INT,
+		&(frontend->network_timeout), "sets timeout in seconds for detection "
+		"of broken network connections (default: 10s)", 0);
+
+	chassis_options_add(opts,
+		"network-retries",          0, 0, G_OPTION_ARG_INT,
+		&(frontend->network_retries), "sets number of retries before a "
+		"connection is considered dead (default: 3)", 0);
 
 	return 0;	
 }
@@ -590,6 +604,17 @@ int main_cmdline(int argc, char **argv) {
 	}
 	g_debug("max open file-descriptors = %"G_GINT64_FORMAT,
 			chassis_fdlimit_get());
+
+#define CHASSIS_NET_TIMEOUT_LIMIT	3
+#define CHASSIS_DEFAULT_NET_TIMEOUT	10	/* seconds */
+
+	srv->network_timeout = frontend->network_timeout ?
+			frontend->network_timeout: CHASSIS_DEFAULT_NET_TIMEOUT;
+	srv->network_retries = frontend->network_retries ?
+			frontend->network_retries: CHASSIS_NET_TIMEOUT_LIMIT;
+
+#undef CHASSIS_DEFAULT_NET_TIMEOUT
+#undef CHASSIS_NET_TIMEOUT_LIMIT
 
 	if (chassis_mainloop(srv)) {
 		/* looks like we failed */

@@ -61,6 +61,9 @@
 
 #include "network-address.h"
 
+#define CHAS_NET_KEEPALIVE_WAIT	10 /* in seconds */
+#define CHAS_NET_KEEPALIVE_ABORT	30 /* in seconds */
+
 typedef enum {
 	NETWORK_SOCKET_SUCCESS,
 	NETWORK_SOCKET_WAIT_FOR_EVENT,

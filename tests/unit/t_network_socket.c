@@ -196,7 +196,7 @@ void t_network_socket_bind(void) {
 void t_network_socket_connect(void) {
 	network_socket *sock;
 	network_socket *client;
-	network_socket *client_connected;
+	network_socket *client_connected = NULL;
 	fd_set read_fds;
 	struct timeval timeout;
 	network_socket_retval_t ret;
@@ -239,8 +239,8 @@ void t_network_socket_connect(void) {
 
 	FD_ZERO(&read_fds);
 	FD_SET(client_connected->fd, &read_fds);
-	timeout.tv_sec = 1;
-	timeout.tv_usec = 500 * 000; /* wait 500ms */
+	timeout.tv_sec = 1;	
+	timeout.tv_usec = 0;
 	g_assert_cmpint(1, ==, select(client_connected->fd + 1, &read_fds, NULL, NULL, &timeout));
 	
 	/* socket_read() needs ->to_read set */
@@ -302,7 +302,7 @@ void t_network_socket_connect_udp(void) {
 	FD_ZERO(&read_fds);
 	FD_SET(server->fd, &read_fds);
 	timeout.tv_sec = 1;
-	timeout.tv_usec = 500 * 000; /* wait 500ms */
+	timeout.tv_usec = 0;
 	g_assert_cmpint(1, ==, select(server->fd + 1, &read_fds, NULL, NULL, &timeout));
 	
 	/* socket_read() needs ->to_read set */

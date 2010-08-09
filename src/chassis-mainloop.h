@@ -77,6 +77,9 @@ struct chassis {
 	chassis_event_threads_t *threads;
 
 	chassis_shutdown_hooks_t *shutdown_hooks;
+
+	long network_timeout;
+	long network_retries;
 };
 
 CHASSIS_API chassis *chassis_init(void) G_GNUC_DEPRECATED;

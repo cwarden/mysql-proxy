@@ -81,7 +81,15 @@ void chassis_event_op_apply(chassis_event_op_t *op, struct event_base *event_bas
 	switch (op->type) {
 	case CHASSIS_EVENT_OP_ADD:
 		event_base_set(event_base, op->ev);
-		event_add(op->ev, NULL);
+		if (op->timeout > 0) { /* ignore zero or negative timeout */
+			struct timeval	tv;
+
+			tv.tv_sec = op->timeout;
+			tv.tv_usec = 0;
+			event_add(op->ev, &tv);
+		} else {
+			event_add(op->ev, NULL);
+		}
 		break;
 	case CHASSIS_EVENT_OP_UNSET:
 		g_assert_not_reached();
@@ -90,18 +98,23 @@ void chassis_event_op_apply(chassis_event_op_t *op, struct event_base *event_bas
 }
 
 /**
- * add a event asynchronously
+ * add an event asynchronously with optional timeout
  *
- * the event is added to the global event-queue and a fd-notification is sent allowing any
- * of the event-threads to handle it
+ * the event is added to the global event-queue and a fd-notification is
+ * sent allowing any of the event-threads to handle it
  *
  * @see network_mysqld_con_handle()
  */
 void chassis_event_add(chassis *chas, struct event *ev) {
+	chassis_event_add_timeout(chas, ev, 0);
+}
+
+void chassis_event_add_timeout(chassis *chas, struct event *ev, long timeout) {
 	chassis_event_op_t *op = chassis_event_op_new();
 
 	op->type = CHASSIS_EVENT_OP_ADD;
 	op->ev   = ev;
+	op->timeout = timeout;
 	g_async_queue_push(chas->threads->event_queue, op);
 
 	send(chas->threads->event_notify_fds[1], C("."), 0); /* ping the event handler */
@@ -336,7 +349,7 @@ void *chassis_event_thread_loop(chassis_event_thread_t *event_thread) {
 	chassis_event_thread_set_event_base(event_thread, event_thread->event_base);
 
 	/**
-	 * check once a second if we shall shutdown the proxy
+	 * check once a second if we need to shutdown the proxy
 	 */
 	while (!chassis_is_shutdown()) {
 		struct timeval timeout;

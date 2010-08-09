@@ -40,11 +40,13 @@ typedef struct {
 	} type;
 
 	struct event *ev;
+	long	timeout;	/* opt. timeout in s */
 } chassis_event_op_t;
 
 CHASSIS_API chassis_event_op_t *chassis_event_op_new();
 CHASSIS_API void chassis_event_op_free(chassis_event_op_t *e);
 CHASSIS_API void chassis_event_add(chassis *chas, struct event *ev);
+CHASSIS_API void chassis_event_add_timeout(chassis *chas, struct event *ev, long timeout);
 CHASSIS_API void chassis_event_add_local(chassis *chas, struct event *ev);
 
 /**

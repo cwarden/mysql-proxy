@@ -330,8 +330,7 @@ gboolean network_address_is_local(network_address *dst_addr, network_address *sr
 		g_debug("%s: is-local dst: %s(:%d)",
 				G_STRLOC,
 				inet_ntoa(dst_addr->addr.ipv4.sin_addr),
-				ntohs(dst_addr->addr.ipv4.sin_port)
-				);
+				ntohs(dst_addr->addr.ipv4.sin_port));
 
 		return (dst_addr->addr.ipv4.sin_addr.s_addr == src_addr->addr.ipv4.sin_addr.s_addr);
 #ifdef HAVE_SYS_UN_H

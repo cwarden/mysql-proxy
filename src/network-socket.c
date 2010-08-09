@@ -49,6 +49,7 @@
 #else
 #include <winsock2.h>
 #include <io.h>
+#include <Mstcpip.h>	/* for struct tcp_keepalive */
 #define ioctl ioctlsocket
 #endif
 
@@ -209,6 +210,136 @@ network_socket *network_socket_accept(network_socket *srv) {
 	return client;
 }
 
+#define MILLISEC	1000	/* ... in a second */
+
+/**
+ * network_socket_keepalive_sockopt
+ * 
+ * tune SO_KEEPALIVE attributes (threshold for initial keepalive packet, 
+ * and for aborting unresponsive connection).
+ * these options are very non-portable, so we keep them in
+ * a seperate function
+ */
+static void network_socket_tune_keepalive(network_socket *sock) {
+	int						s = sock->fd;
+
+#ifdef WIN32
+
+#define VISTA_KEEPALIVE_COUNT	10	/* fixed, cannot be changed */
+#define W2K_KEEPALIVE_COUNT		5	/* default only, can be changed */
+
+	DWORD					dummy;
+	struct tcp_keepalive	keep;
+	OSVERSIONINFO			os;
+	int						keepalive_probe_count;
+
+	/*
+	 * various versions of windows have different defaults for 
+	 * the number of keepalive probes they send before they consider
+	 * a connection dead. (http://msdn.microsoft.com/en-us/library/dd877220):
+	 *
+	 *     "On Windows Vista and later, the number of keep-alive probes
+	 *     (data retransmissions) is set to 10 and cannot be changed. 
+	 *     On Windows Server 2003, Windows XP, and Windows 2000, the default
+	 *     setting for number of keep-alive probes is 5."
+	 *
+	 * we're currently ignoring the fact that for the latter, per-system
+	 * changes are possible in the registry. This may cause interesting results.
+	 */
+	os.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+	if (GetVersionEx(&os) == 0) {
+		g_critical("cannot get windows OS version info, using default for Vista");
+		keepalive_probe_count = VISTA_KEEPALIVE_COUNT;
+	} else {
+		if (os.dwMajorVersion >= 6)
+			keepalive_probe_count = VISTA_KEEPALIVE_COUNT;
+		else
+			keepalive_probe_count = W2K_KEEPALIVE_COUNT;
+	}
+			
+	keep.onoff = 1;
+	keep.keepalivetime = CHAS_NET_KEEPALIVE_WAIT;
+	keep.keepaliveinterval = CHAS_NET_KEEPALIVE_ABORT / keepalive_probe_count;
+
+	if (WSAIoctl(
+		(socket) s,
+		SIO_KEEPALIVE_VALS,
+		(LPVOID) &keep,
+		(DWORD) sizeof(keep),
+		NULL,					/* output buffer */
+		0,						/* size of output buffer */
+		&dummy,					/* number of bytes returned */
+		NULL,					/* OVERLAPPED structure */
+		NULL,					/* completion routine */
+		NULL,					/* a WSATHREADID structure */
+		NULL					/* a pointer to the error code. */
+	) != 0)
+		g_critical("%s: WSAIoctl(..SIO_KEEPALIVE_VALS...) failed: %d", 
+				G_STRLOC, WSAGetLastError());
+
+#else /* WIN32 */
+	unsigned int val;
+
+#ifdef TCP_KEEPALIVE_THRESHOLD /* Solaris, (HP-UX?) */
+	/*
+	 * we have the initial threshold and the final abort threshold
+	 * in *milliseconds*. I didn't find any information about how to set
+	 * the interval between keepalive probes.
+	 */
+	/* send first keepalive msg after 10 second */
+	val = CHAS_NET_KEEPALIVE_WAIT * MILLISEC;
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPALIVE_THRESHOLD,
+			&val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(%d, TCP_KEEPALIVE_THRESHOLD..) failed: %s (%d)",
+				G_STRLOC, s, g_strerror(errno), errno);
+
+	/* abort unresponsive connection after 30 seconds */
+	val = CHAS_NET_KEEPALIVE_ABORT * MILLISEC;
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPALIVE_ABORT_THRESHOLD,
+			&val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(%d, TCP_KEEPALIVE_ABORT_THRESHOLD..) failed: "
+				"%s (%d)", G_STRLOC, s, g_strerror(errno), errno);
+
+#elif defined TCP_KEEPIDLE /* linux, AIX */
+	/*
+	 * we can set threshold for initial keepalive message, 
+	 * interval between messages (in *seconds*) and a count of
+	 * such intervals after which to abort a connection
+	 */
+	/* send first keepalive msg after 10 second */
+	val = CHAS_NET_KEEPALIVE_WAIT;
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(..TCP_KEEPIDLE...) failed: %s (%d)", 
+				G_STRLOC, g_strerror(errno), errno);
+
+	val = 5; /* 5 seconds between keepalive probes - this is fairly arbitrary */
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, &val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(..TCP_KEEPINTVL...) failed: %s (%d)", 
+				G_STRLOC, g_strerror(errno), errno);
+
+	val = CHAS_NET_KEEPALIVE_ABORT / 5; /* abort after 6 probes, ie 30s */
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(..TCP_KEEPCNT...) failed: %s (%d)", 
+				G_STRLOC, g_strerror(errno), errno);
+
+#elif defined TCP_KEEPALIVE /* MacOS, FreeBSD */
+
+	/*
+	 * there don't seem to be any per-socket settings for
+	 * probe interval, probe count or abort timeout; as we cannot
+	 * rely on the system-wide settings being at their default,
+	 * all this is a little optimistic at the moment...
+	 */
+	/* send first keepalive msg after 10 second */
+	val = CHAS_NET_KEEPALIVE_WAIT;
+	if (setsockopt(s, IPPROTO_TCP, TCP_KEEPALIVE, &val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(..TCP_KEEPALIVE...) failed: %s (%d)", 
+				G_STRLOC, g_strerror(errno), errno);
+
+#endif /* TCP_KEEPALIVE_THRESHOLD */
+#endif /* WIN32 */
+}
+
 static network_socket_retval_t network_socket_connect_setopts(network_socket *sock) {
 #ifdef WIN32
 	char val = 1;	/* Win32 setsockopt wants a const char* instead of the UNIX void*...*/
@@ -223,14 +354,21 @@ static network_socket_retval_t network_socket_connect_setopts(network_socket *so
 	setsockopt(sock->fd, IPPROTO_IP,     IP_TOS, &val, sizeof(val));
 #endif
 	val = 1;
-	setsockopt(sock->fd, IPPROTO_TCP,    TCP_NODELAY, &val, sizeof(val) );
+	setsockopt(sock->fd, IPPROTO_TCP,    TCP_NODELAY, &val, sizeof(val));
 	val = 1;
-	setsockopt(sock->fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val) );
+	if (setsockopt(sock->fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) != 0)
+		g_critical("%s: setsockopt(%d, SO_KEEPALIVE..) failed: %s (%d)", 
+				G_STRLOC, sock->fd, g_strerror(errno), errno);
+
+	/* tuning keepalive isn't supported on AF_UNIX sockets */
+	if (!network_address_is_local(sock->dst, sock->src))
+		network_socket_tune_keepalive(sock);
 
 	/* the listening side may be INADDR_ANY, let's get which address the client really connected to */
 	if (-1 == getsockname(sock->fd, &sock->src->addr.common, &(sock->src->len))) {
-		g_debug("%s: getsockname() failed: %s (%d)",
+		g_debug("%s: getsockname() on fd %d failed: %s (%d)",
 				G_STRLOC,
+				sock->fd,
 				g_strerror(errno),
 				errno);
 		network_address_reset(sock->src);
@@ -345,7 +483,7 @@ network_socket_retval_t network_socket_connect(network_socket *sock) {
 }
 
 /**
- * connect a socket
+ * bind a socket
  *
  * the con->dst->addr has to be set before 
  * 
