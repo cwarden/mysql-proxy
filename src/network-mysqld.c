@@ -846,33 +846,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 	g_assert(srv);
 	g_assert(con);
 
-	if ((events & EV_TIMEOUT) != 0) {
-		int b = -1;
-
-		/*
-		 * tested on Solaris only for now:
-		 * when a backend becomes unreachable on the network, the following ioctl
-		 * will fail, whereas if it's only busy, the ioctl will succeed
-		 * and tell us "0 bytes available".
-		 * we should therefore only time out in the former case
-		 */
-		if (ioctl(event_fd, FIONREAD, &b) == -1) {
-			g_debug("timeout: ioctl on fd %d returns error %d:%s", 
-					event_fd, errno, strerror(errno));
-			con->timeout_count++;
-			/* if we've exceeded the timeout limit, close connection */
-			if (con->timeout_count >= srv->network_retries) {
-				g_debug("[%s]: timeout on connection (fd: %d event: %d)."
-						" closing client connection after %d failed retries.",
-						G_STRLOC, event_fd, events, con->timeout_count);
-				plugin_call_cleanup(srv, con);
-				network_mysqld_con_free(con);
-				con = NULL;
-
-				return;
-			} 
-		}
-	} else if (events == EV_READ) {
+	if (events == EV_READ) {
 		int b = -1;
 
 		/* a valid read event resets timeouts */
