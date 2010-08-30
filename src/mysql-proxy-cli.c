@@ -131,6 +131,7 @@ typedef struct {
 
 	gchar *log_level;
 	gchar *log_filename;
+	gchar *log_config_filename;
 	int    use_syslog;
 
 	char *lua_path;
@@ -163,6 +164,8 @@ void chassis_frontend_free(chassis_frontend_t *frontend) {
 
 	if (frontend->base_dir) g_free(frontend->base_dir);
 	if (frontend->user) g_free(frontend->user);
+	if (frontend->log_filename) g_free(frontend->log_filename);
+	if (frontend->log_config_filename) g_free(frontend->log_config_filename);
 	if (frontend->pid_file) g_free(frontend->pid_file);
 	if (frontend->log_level) g_free(frontend->log_level);
 	if (frontend->plugin_dir) g_free(frontend->plugin_dir);
@@ -210,6 +213,9 @@ int chassis_frontend_set_chassis_options(chassis_frontend_t *frontend, chassis_o
 
 	chassis_options_add(opts,
 		"log-file",                 0, 0, G_OPTION_ARG_STRING, &(frontend->log_filename), "log all messages in a file", "<file>");
+
+	chassis_options_add(opts,
+		"log-config-file",          0, 0, G_OPTION_ARG_FILENAME, &(frontend->log_config_filename), "Use extended logging configuration", "<file>");
 
 	chassis_options_add(opts,
 		"log-use-syslog",           0, 0, G_OPTION_ARG_NONE, &(frontend->use_syslog), "log all messages to syslog", NULL);
@@ -276,7 +282,6 @@ int main_cmdline(int argc, char **argv) {
 		GOTO_EXIT(EXIT_FAILURE);
 	}
 
-	/* start the logging ... to stderr */
 	log = chassis_log_new();
 	log->min_lvl = G_LOG_LEVEL_MESSAGE; /* display messages while parsing or loading plugins */
 	g_log_set_default_handler(chassis_log_func, log);
@@ -300,6 +305,7 @@ int main_cmdline(int argc, char **argv) {
 
 	frontend = chassis_frontend_new();
 	option_ctx = g_option_context_new("- MySQL Proxy");
+
 	/**
 	 * parse once to get the basic options like --defaults-file and --version
 	 *
@@ -411,12 +417,15 @@ int main_cmdline(int argc, char **argv) {
 	 * from the plugins, thus we need to fix them up before
 	 * dealing with all the rest.
 	 */
+	chassis_resolve_path(srv->base_dir, &frontend->log_config_filename);
 	chassis_resolve_path(srv->base_dir, &frontend->log_filename);
 	chassis_resolve_path(srv->base_dir, &frontend->pid_file);
 	chassis_resolve_path(srv->base_dir, &frontend->plugin_dir);
 
 	/*
 	 * start the logging
+	 *
+	 * If we have a log config file, it takes precendence before the simple other log-* options.
 	 */
 	if (frontend->log_filename) {
 		log->log_filename = g_strdup(frontend->log_filename);
@@ -430,7 +439,18 @@ int main_cmdline(int argc, char **argv) {
 		GOTO_EXIT(EXIT_FAILURE);
 	}
 
-	if (log->log_filename && FALSE == chassis_log_open(log)) {
+	if (log->log_config_filename) {
+		chassis_log_extended_t *log_ext;
+		log_ext = chassis_log_extended_new();
+		log->log_ext = log_ext;
+		chassis_log_load_config(log_ext, log->log_config_filename);
+
+		/* reset the default log handler to our hierarchical logger */
+		g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+
+		/* the system should now be set up, let's try to log something */
+		g_message("this should go to the root logger on level message");
+	} else if (log->log_filename && FALSE == chassis_log_open(log)) {
 		g_critical("can't open log-file '%s': %s", log->log_filename, g_strerror(errno));
 
 		GOTO_EXIT(EXIT_FAILURE);

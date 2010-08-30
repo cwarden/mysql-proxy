@@ -36,7 +36,8 @@ TESTS=\
 	t_chassis_timings \
 	t_chassis_shutdown_hooks \
 	check_chassis_filemode \
-	check_chassis_path
+	check_chassis_path \
+	check_chassis_log_extended
 
 check_PROGRAMS=$(TESTS)
 
@@ -116,6 +117,10 @@ check_plugin_LDADD    = $(GLIB_LIBS) $(GMODULE_LIBS)
 check_chassis_log_SOURCES  = check_chassis_log.c $(top_srcdir)/src/chassis-log.c
 check_chassis_log_CPPFLAGS = -I$(top_srcdir)/src/ $(GLIB_CFLAGS) $(MYSQL_CFLAGS) $(GMODULE_CFLAGS)
 check_chassis_log_LDADD    = $(GLIB_LIBS) $(GMODULE_LIBS)
+
+check_chassis_log_extended_SOURCES  = check_chassis_log_extended.c $(top_srcdir)/src/chassis-log-extended.c
+check_chassis_log_extended_CPPFLAGS = -I$(top_srcdir)/src/ $(GLIB_CFLAGS) $(MYSQL_CFLAGS) $(GMODULE_CFLAGS)
+check_chassis_log_extended_LDADD    = $(GLIB_LIBS) $(GMODULE_LIBS) $(GTHREAD_LIBS)
 
 check_loadscript_SOURCES  = check_loadscript.c $(top_srcdir)/src/lua-scope.c $(top_srcdir)/src/lua-load-factory.c $(top_srcdir)/src/chassis-stats.c
 check_loadscript_CPPFLAGS = -I$(top_srcdir)/src/ $(LUA_CFLAGS) $(GLIB_CFLAGS) $(MYSQL_CFLAGS) $(GMODULE_CFLAGS)

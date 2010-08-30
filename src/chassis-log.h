@@ -10,14 +10,14 @@
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  GNU General Public License for more details.
-
+  
  You should have received a copy of the GNU General Public License
  along with this program; if not, write to the Free Software
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  02110-1301  USA
 
  $%ENDLICENSE%$ */
- 
+  
 
 #ifndef _CHASSIS_LOG_H_
 #define _CHASSIS_LOG_H_
@@ -28,6 +28,7 @@
 #endif
 
 #include "chassis-exports.h"
+#include "chassis-log-extended.h"
 
 #define CHASSIS_RESOLUTION_SEC	0x0
 #define CHASSIS_RESOLUTION_MS	0x1
@@ -39,6 +40,7 @@
 typedef struct {
 	GLogLevelFlags min_lvl;
 
+	gchar *log_config_filename;
 	gchar *log_filename;
 	gint log_file_fd;
 
@@ -47,7 +49,7 @@ typedef struct {
 #ifdef _WIN32
 	HANDLE event_source_handle;
 	gboolean use_windows_applog;
-#endif
+  #endif
 	gboolean rotate_logs;
 
 	GString *log_ts_str;
@@ -56,6 +58,8 @@ typedef struct {
 	GString *last_msg;
 	time_t   last_msg_ts;
 	guint    last_msg_count;
+
+	chassis_log_extended_t *log_ext;
 } chassis_log;
 
 
@@ -70,6 +74,9 @@ CHASSIS_API int chassis_log_set_event_log(chassis_log *log, const char *app_name
 CHASSIS_API const char *chassis_log_skip_topsrcdir(const char *message);
 CHASSIS_API void chassis_set_logtimestamp_resolution(chassis_log *log, int res);
 CHASSIS_API int chassis_get_logtimestamp_resolution(chassis_log *log);
+
+/* only used for the extended log */
+CHASSIS_API void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name);
 /*@}*/
 
 #endif
