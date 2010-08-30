@@ -165,7 +165,7 @@ void chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chass
 	}
 }
 
-void chassis_log_extended_unregister_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger) {
+void chassis_log_extended_unregister_logger(chassis_log_extended_t G_GNUC_UNUSED *log_ext, chassis_log_extended_logger_t G_GNUC_UNUSED *logger) {
 	/* TODO: currently unimplemented */
 	g_assert_not_reached();
 }
@@ -432,7 +432,7 @@ gboolean chassis_log_extended_logger_target_open(chassis_log_extended_logger_tar
 
 	target->fd = g_open(target->file_path, O_RDWR | O_CREAT | O_APPEND, 0660);
 	if (target->fd == -1) {
-		g_set_error(error, g_file_error_quark(), g_file_error_from_errno(errno), g_strerror(errno));
+		g_set_error(error, g_file_error_quark(), g_file_error_from_errno(errno), "%s", g_strerror(errno));
 		return FALSE;
 	}
 	return TRUE;
@@ -443,7 +443,7 @@ gboolean chassis_log_extended_logger_target_close(chassis_log_extended_logger_ta
 	g_assert_cmpint(target->fd, !=, -1);
 
 	if (-1 == close(target->fd)) {
-		g_set_error(error, g_file_error_quark(), g_file_error_from_errno(errno), g_strerror(errno));
+		g_set_error(error, g_file_error_quark(), g_file_error_from_errno(errno), "%s", g_strerror(errno));
 		return FALSE;
 	}
 	target->fd = -1;
