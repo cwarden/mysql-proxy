@@ -253,7 +253,8 @@ void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_l
  * @param target optional output value to also get the effective target of the logger
  * @return the effective log level for the logger_name
  */
-static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassis_log_extended_t *log_ext, const gchar *logger_name, chassis_log_extended_logger_target_t **target) {
+static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassis_log_extended_t *log_ext,
+		const gchar *logger_name, chassis_log_extended_logger_target_t **target) {
 	chassis_log_extended_logger_t *logger;
 
 	logger = chassis_log_extended_get_logger_raw(log_ext, logger_name);
@@ -270,21 +271,30 @@ static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassi
 			 * The downside is that it performs more computation (esp string ops) than the iterative version.
 			 * TODO: measure the overhead - computing the effective levels should be very infrequent, so it's likely ok to do this.
 			 */
-			gchar **hierarchy = chassis_log_extract_hierarchy_names(logger_name);
-			guint parts = g_strv_length(hierarchy);
+			gchar **hierarchy;
+			guint parts;
 			chassis_log_extended_logger_target_t *parent_target = NULL;
-			GLogLevelFlags parent_effective_level = chassis_log_extended_get_effective_level_and_target(log_ext, hierarchy[parts - 2], &parent_target);
+			GLogLevelFlags parent_effective_level;
+
+			hierarchy = chassis_log_extract_hierarchy_names(logger_name);
+			parts = g_strv_length(hierarchy);
+
+			parent_effective_level = chassis_log_extended_get_effective_level_and_target(log_ext, hierarchy[parts - 2], &parent_target);
 			logger->effective_level = parent_effective_level;
 			logger->target = parent_target;
+
 			g_strfreev(hierarchy);
 		} else {
 			/* explicit loggers have their effective_level given as their min_level */
 			logger->effective_level = logger->min_level;
 		}
 	}
+
 	/* if requested, also return our target */
-	if (target)
+	if (target) {
 		*target = logger->target;
+	}
+
 	return logger->effective_level;
 }
 
@@ -375,15 +385,17 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 			time(NULL) - target->last_msg_ts > 30) {	/* TODO: make these limits configurable */
 		if (target->last_msg_count) {
 			GString *logger_names = g_string_new("");
-			if (g_hash_table_size(target->last_loggers) > 0) { /* should be always true... */
+			guint hash_size = g_hash_table_size(target->last_loggers);
+
+			if (hash_size > 0) { /* should be always true... */
 				GHashTableIter iter;
 				gpointer key, value;
 				guint i = 0;
-				guint hash_size = g_hash_table_size(target->last_loggers);
 
 				g_hash_table_iter_init(&iter, target->last_loggers);
 				while (g_hash_table_iter_next(&iter, &key, &value)) {
 					g_string_append(logger_names, (gchar*)key);
+
 					g_hash_table_iter_remove(&iter);
 					if (++i < hash_size) {
 						g_string_append(logger_names, ", ");
@@ -414,7 +426,9 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 	} else {
 		/* save the logger_name to print all of the coalesced logger sources later */
 		gchar *hash_logger_name = g_strdup(logger_name_clean);
+
 		g_hash_table_insert(target->last_loggers, hash_logger_name, hash_logger_name);
+
 		target->last_msg_count++;
 	}
 
