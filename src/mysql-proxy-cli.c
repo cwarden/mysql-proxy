@@ -442,11 +442,19 @@ int main_cmdline(int argc, char **argv) {
 	if (log->log_config_filename) {
 		chassis_log_extended_t *log_ext;
 		log_ext = chassis_log_extended_new();
-		log->log_ext = log_ext;
-		chassis_log_load_config(log_ext, log->log_config_filename);
+		if (FALSE == chassis_log_load_config(log_ext, log->log_config_filename, &gerr)) {
+			g_critical("%s: %s",
+					G_STRLOC,
+					gerr->message);
+			g_clear_error(&gerr);
+
+			chassis_log_extended_free(log_ext);
+			GOTO_EXIT(EXIT_FAILURE);
+		}
 
 		/* reset the default log handler to our hierarchical logger */
 		g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+		log->log_ext = log_ext;
 
 		/* the system should now be set up, let's try to log something */
 		g_message("this should go to the root logger on level message");

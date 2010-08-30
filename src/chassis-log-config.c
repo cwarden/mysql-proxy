@@ -53,9 +53,8 @@ static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
 	return 0;
 }
 
-void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) {
+gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *file_name, GError **gerr) {
 	GKeyFile *config = g_key_file_new();
-	GError *error = NULL;
 	gchar **keys, **groups;
 	gsize keys_count, groups_count;
 	guint i = 0;
@@ -65,36 +64,41 @@ void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) 
 	gchar *default_target_name;
 	chassis_log_extended_logger_t *default_logger;
 	chassis_log_extended_logger_target_t *default_target;
+	gboolean ret = FALSE;
 
 	g_assert(log_ext);
 	g_assert(file_name);
-	if (FALSE == g_key_file_load_from_file(config, file_name, G_KEY_FILE_NONE, &error)) {
-		/* FIXME: ignores error for now */
+	if (FALSE == g_key_file_load_from_file(config, file_name, G_KEY_FILE_NONE, gerr)) {
 		goto error_cleanup;
-}
+	}
 
 	if (!g_key_file_has_group(config, TARGETS_GROUP)) {
 		/* FIXME: complain about missing targets */
 		goto error_cleanup;
 	}
+
 	if (!g_key_file_has_group(config, DEFAULT_LOGGER)) {
 		/* FIXME: should we take it from the global config for compatibility/convenience reasons? */
 		goto error_cleanup;
 	}
+
 	/* collect all the targets and register them */
 	keys = g_key_file_get_keys(config, TARGETS_GROUP, &keys_count, NULL);
 	if (keys_count == 0) {
 		/* FIXME: complain about missing targets */
 		goto error_cleanup;
 	}
+
 	/* register all targets we've found */
 	for (i = 0; i < keys_count; i++) {
 		chassis_log_extended_logger_target_t *target;
 		gchar *target_file = g_key_file_get_string(config, TARGETS_GROUP, keys[i], NULL);
-		/* TODO: cleanse target_file */
+
 		target = chassis_log_extended_logger_target_new(target_file);
 		g_hash_table_insert(targets, keys[i], target);
 		chassis_log_extended_register_target(log_ext, target);
+
+		g_free(target_file);
 	}
 
 	default_log_level_str = g_key_file_get_string(config, DEFAULT_LOGGER, LEVEL_KEY, NULL);
@@ -107,6 +111,9 @@ void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) 
 	default_target = g_hash_table_lookup(targets, default_target_name);
 	default_logger = chassis_log_extended_logger_new("", default_log_level, default_target);
 	chassis_log_extended_register_logger(log_ext, default_logger);
+
+	g_free(default_log_level_str);
+
 
 	/* register all loggers defined in the config file */
 	groups = g_key_file_get_groups(config, &groups_count);
@@ -148,8 +155,13 @@ void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name) 
 	}
 	g_strfreev(groups);
 
+	ret = TRUE; /* everything was fine, we read the config */
+
 error_cleanup:
 	g_strfreev(keys);
 	g_hash_table_destroy(targets);
 	g_key_file_free(config);
+
+	return ret;
 }
+

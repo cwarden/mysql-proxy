@@ -127,12 +127,19 @@ CHASSIS_API void chassis_log_extended_free(chassis_log_extended_t* log_ext);
  * @retval FALSE if the registration failed or it already was registered (you should dispose target yourself in this case)
  */
 CHASSIS_API gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_extended_logger_target_t *target);
-CHASSIS_API void chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
+
+/**
+ * Register a logger
+ *
+ * @retval TRUE on success
+ * @retval FALSE if the registration failed or it already was registered (you should dispose target yourself in this case)
+ */
+CHASSIS_API gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
 CHASSIS_API void chassis_log_extended_unregister_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
-CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, gchar *logger_name);
+CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name);
 CHASSIS_API void chassis_log_extended_rotate(chassis_log_extended_t* log_ext);
-CHASSIS_API void chassis_log_extended_force_log_all(chassis_log_extended_t* log_ext, gchar *message);
-CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_extended_t *log_ext, gchar *logger_name);
+CHASSIS_API void chassis_log_extended_force_log_all(chassis_log_extended_t* log_ext, const gchar *message);
+CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_extended_t *log_ext, const gchar *logger_name);
 
 /**
  * Interface to glib2's logging system.
@@ -159,7 +166,7 @@ CHASSIS_API void chassis_log_extended_logger_target_rotate(chassis_log_extended_
  * @param level the log level for this message
  * @param message the string to write out - will be subject to formatting
  */
-CHASSIS_API void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t *target, gchar *logger_name, GLogLevelFlags level, gchar *message);
+CHASSIS_API void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t *target, gchar *logger_name, GLogLevelFlags level, const gchar *message);
 
 /**
  * Unconditionally writes to a target's log file, i.e. it doesn't check the effective log level.
@@ -191,7 +198,7 @@ CHASSIS_API gboolean chassis_log_extended_logger_target_open(chassis_log_extende
  */
 CHASSIS_API gboolean chassis_log_extended_logger_target_close(chassis_log_extended_logger_target_t* target, GError **error);
 
-CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_logger_new(gchar *logger_name, GLogLevelFlags min_level, chassis_log_extended_logger_target_t *target);
+CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_extended_logger_target_t *target);
 CHASSIS_API void chassis_log_extended_logger_free(chassis_log_extended_logger_t* logger);
 /**
  * Conditionally logs a message to a logger's target.
@@ -203,7 +210,7 @@ CHASSIS_API void chassis_log_extended_logger_free(chassis_log_extended_logger_t*
  * @param level the log level of the message
  * @param message the string to log
  */
-CHASSIS_API void chassis_log_extended_logger_log(chassis_log_extended_logger_t* logger, GLogLevelFlags level, gchar *message);
+CHASSIS_API void chassis_log_extended_logger_log(chassis_log_extended_logger_t* logger, GLogLevelFlags level, const gchar *message);
 
 /* utility functions */
 /**
@@ -221,6 +228,6 @@ CHASSIS_API void chassis_log_extended_logger_log(chassis_log_extended_logger_t* 
  * @return an array of hierarchy names
  * @retval NULL if the logger_name is NULL
  */
-CHASSIS_API gchar** chassis_log_extract_hierarchy_names(gchar *logger_name);
+CHASSIS_API gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name);
 
 #endif /* _CHASSIS_LOG_EXTENDED_H_ */

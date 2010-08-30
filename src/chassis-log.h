@@ -76,7 +76,7 @@ CHASSIS_API void chassis_set_logtimestamp_resolution(chassis_log *log, int res);
 CHASSIS_API int chassis_get_logtimestamp_resolution(chassis_log *log);
 
 /* only used for the extended log */
-CHASSIS_API void chassis_log_load_config(chassis_log_extended_t *log_ext, gchar *file_name);
+CHASSIS_API gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *file_name, GError **gerr);
 /*@}*/
 
 #endif
