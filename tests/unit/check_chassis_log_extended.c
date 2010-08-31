@@ -88,33 +88,30 @@ START_TEST(split_name) {
 	const gchar *single = "chassis";
 	const gchar *three = "chassis.network.backend";
 	gchar **parts;
-	guint num_parts;
+	gsize num_parts;
 
 	/* invalid input results in NULL */
-	parts = chassis_log_extract_hierarchy_names((gchar *)invalid);
+	parts = chassis_log_extract_hierarchy_names(invalid, &num_parts);
 	g_assert_cmpptr(NULL, ==, parts);
 
 	/* empty string (aka root logger) */
-	parts = chassis_log_extract_hierarchy_names((gchar *)empty);
-	g_assert(NULL != parts);
-	num_parts = g_strv_length(parts);
+	parts = chassis_log_extract_hierarchy_names(empty, &num_parts);
+	g_assert_cmpptr(NULL, !=, parts);
 	g_assert_cmpint(num_parts, ==, 1);
 	g_assert_cmpstr("", ==, parts[0]);
 	g_strfreev(parts);
 
 	/* single */
-	parts = chassis_log_extract_hierarchy_names((gchar *)single);
-	g_assert(NULL != parts);
-	num_parts = g_strv_length(parts);
+	parts = chassis_log_extract_hierarchy_names(single, &num_parts);
+	g_assert_cmpptr(NULL, !=, parts);
 	g_assert_cmpint(num_parts, ==, 2);
 	g_assert_cmpstr("", ==, parts[0]);
 	g_assert_cmpstr("chassis", ==, parts[1]);
 	g_strfreev(parts);
 
 	/* three */
-	parts = chassis_log_extract_hierarchy_names((gchar *)three);
-	g_assert(NULL != parts);
-	num_parts = g_strv_length(parts);
+	parts = chassis_log_extract_hierarchy_names(three, &num_parts);
+	g_assert_cmpptr(NULL, !=, parts);
 	g_assert_cmpint(num_parts, ==, 4);
 	g_assert_cmpstr("", ==, parts[0]);
 	g_assert_cmpstr("chassis", ==, parts[1]);

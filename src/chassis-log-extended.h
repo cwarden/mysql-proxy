@@ -225,9 +225,10 @@ CHASSIS_API void chassis_log_extended_logger_log(chassis_log_extended_logger_t* 
  *  { "", "a", "a.b", NULL }
  * 
  * @param logger_name a hierarchical name
+ * @param len pointer where to store the number of names, may to be NULL
  * @return an array of hierarchy names
  * @retval NULL if the logger_name is NULL
  */
-CHASSIS_API gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name);
+CHASSIS_API gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name, gsize *len);
 
 #endif /* _CHASSIS_LOG_EXTENDED_H_ */

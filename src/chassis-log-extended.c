@@ -525,43 +525,46 @@ static void chassis_log_extended_logger_target_update_timestamp(chassis_log_exte
 	s->len = strftime(s->str, s->allocated_len, "%Y-%m-%d %H:%M:%S", tm);
 }
 
-gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name) {
+gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name, gsize *len) {
 	gchar **substrings;
 	gchar *occurrence;
 	const gchar *haystack = logger_name;
-	guint num_dots = 0;
-	guint i = 0;
+	guint num_dots;
+	guint i;
 
 	if (logger_name == NULL) return NULL;
 
-	while (haystack[i] != '\0') {
-		if (haystack[i] == '.')
+	for (i = 0, num_dots = 0; haystack[i] != '\0'; i++) {
+		if (haystack[i] == '.') {
 			num_dots++;
-		i++;
+		}
 	}
+
 	/* +3 because n dots means n+1 parts and we always include the root logger (empty string) and need a trailing NULL pointer */
 	substrings = g_malloc0((num_dots+3) * sizeof(gchar*));
+
 	/* always insert the root logger (check for logger_name == "" is in the if stmt below) */
-	substrings[0] = g_strdup("");
-	i = 1;
+	i = 0;
+	substrings[i++] = g_strdup("");
 	do {
 		occurrence = g_strstr_len(haystack, -1, ".");
 		if (occurrence) {
 			/* copy up to the dot (exclusive)*/
-			substrings[i] = g_strndup(logger_name, occurrence - logger_name);
+			substrings[i++] = g_strndup(logger_name, occurrence - logger_name);
 			/* skip past the dot we found */
 			haystack += (occurrence - haystack) + 1;
-		} else {
+		} else if (g_strcmp0(logger_name, "") != 0) {
 			/* last part is simply the original name, but don't copy the root logger twice! */
-			if (g_strcmp0(logger_name, "") != 0) {
-				substrings[i] = g_strdup(logger_name);
-			}
+			substrings[i++] = g_strdup(logger_name);
 		}
-		i++;
 	} while (occurrence != NULL);
 
 	/* add trailing NULL, so callers know when to stop */
 	substrings[i] = NULL;
+
+	if (len) {
+		*len = i;
+	}
 
 	return substrings;
 }
