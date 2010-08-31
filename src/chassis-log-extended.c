@@ -131,19 +131,19 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 	} else {
 		chassis_log_extended_logger_t *implicit = NULL;
 		chassis_log_extended_logger_t *previous = NULL;
-		guint levels = 0;
+		gsize levels;
 		gint i; /* do _not_ make this unsigned! that would break the if below */
 		gchar **name_parts = NULL;
 
 		/* insert the explicit logger, and all the implicit ones all the way to the root */
 		g_hash_table_insert(loggers, logger->name, logger);
-		name_parts = chassis_log_extract_hierarchy_names(logger->name);
-		levels = g_strv_length(name_parts);
+		name_parts = chassis_log_extract_hierarchy_names(logger->name, &levels);
 		previous = logger;
 
 		/* walk the name parts in reverse but leave out the last element (levels-1) - we have just inserted that one */
 		for (i = levels-2; i >= 0; i--) {
 			chassis_log_extended_logger_t *parent = NULL;
+
 			/* stop inserting on the first logger that's already present, irrespective of whether it's implicit or explicit.
 			 * otherwise we would overwrite previously registered loggers (such as the root logger)
 			 * we simply add the last logger created to the children list of the pre-existing logger and set our parent pointer to it
@@ -159,16 +159,21 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 				implicit->parent = parent;
 				break;
 			}
+
 			/* implicit loggers have practically no information yet, only a name and that they are implicit */
 			implicit = chassis_log_extended_logger_new(name_parts[i], 0, NULL);
 			implicit->is_implicit = TRUE;
 			implicit->is_autocreated = logger->is_autocreated;
+
 			g_hash_table_insert(loggers, implicit->name, implicit);
+
 			previous->parent = implicit;
 			g_ptr_array_add(implicit->children, previous);
+
 			previous = implicit;
 		}
-		g_strfreev(name_parts);
+
+		if (name_parts) g_strfreev(name_parts); /* theoretically it could be NULL */
 	}
 
 	return TRUE;
@@ -272,18 +277,21 @@ static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassi
 			 * TODO: measure the overhead - computing the effective levels should be very infrequent, so it's likely ok to do this.
 			 */
 			gchar **hierarchy;
-			guint parts;
+			gsize parts;
 			chassis_log_extended_logger_target_t *parent_target = NULL;
 			GLogLevelFlags parent_effective_level;
 
-			hierarchy = chassis_log_extract_hierarchy_names(logger_name);
-			parts = g_strv_length(hierarchy);
+			hierarchy = chassis_log_extract_hierarchy_names(logger_name, &parts);
 
-			parent_effective_level = chassis_log_extended_get_effective_level_and_target(log_ext, hierarchy[parts - 2], &parent_target);
-			logger->effective_level = parent_effective_level;
-			logger->target = parent_target;
+			if (NULL != hierarchy) {
+				g_assert_cmpint(parts, >=, 2);
 
-			g_strfreev(hierarchy);
+				parent_effective_level = chassis_log_extended_get_effective_level_and_target(log_ext, hierarchy[parts - 2], &parent_target);
+				logger->effective_level = parent_effective_level;
+				logger->target = parent_target;
+
+				g_strfreev(hierarchy);
+			}
 		} else {
 			/* explicit loggers have their effective_level given as their min_level */
 			logger->effective_level = logger->min_level;
