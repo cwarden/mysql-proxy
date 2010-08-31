@@ -27,10 +27,13 @@
 
 #include "chassis-log-extended.h"
 
-#if GLIB_CHECK_VERSION(2, 16, 0)
 #include "string-len.h"
 
 #define g_assert_cmpptr(a, cmp, b) g_assert_cmphex(GPOINTER_TO_UINT(a), cmp, GPOINTER_TO_UINT(b))
+#if !GLIB_CHECK_VERSION(2, 20, 0)
+#define g_assert_no_error(err) g_assert_cmpptr(err, ==, NULL)
+#endif
+
 #define START_TEST(x) void (test_chassis_log_extended_ ## x)(void)
 #define TEST(x) g_test_add_func(TESTPATH #x, test_chassis_log_extended_ ## x)
 
@@ -392,7 +395,7 @@ START_TEST(target_rotate) {
 	gchar *tmp_file_name = create_tmp_file_name();
 	gchar *rotate_file_name = g_strdup_printf("%s.%s", tmp_file_name, "old");
 	chassis_log_extended_logger_target_t *target;
-	GError *error;
+	GError *error = NULL;
 	gchar *log_file_contents;
 
 	/* open a target, rename the file, then close and open the target with the original file
@@ -413,7 +416,14 @@ START_TEST(target_rotate) {
 	target->log_func(target, G_LOG_LEVEL_MESSAGE, C("message to original file"));
 	g_rename(tmp_file_name, rotate_file_name);
 	target->log_func(target, G_LOG_LEVEL_MESSAGE, C("\nsecond message to original file"));
-	chassis_log_extended_logger_target_rotate(target);
+	if (FALSE == chassis_log_extended_logger_target_reopen(target, &error)) {
+		g_printerr("Could not reopen logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
+		g_error_free(error);
+		g_free(tmp_file_name);
+		chassis_log_extended_free(log_ext);
+		g_assert_not_reached();
+	}
+	g_assert_no_error(error);
 
 	target->log_func(target, G_LOG_LEVEL_MESSAGE, C("message after rotating file"));
 
@@ -471,7 +481,7 @@ START_TEST(rotate_all) {
 	g_rename(log_file_a, rotate_file_name_a);
 	g_rename(log_file_b, rotate_file_name_b);
 
-	chassis_log_extended_rotate(log_ext);
+	chassis_log_extended_reopen(log_ext);
 
 	g_assert(g_file_test(log_file_a, G_FILE_TEST_EXISTS));
 	g_assert(g_file_test(rotate_file_name_a, G_FILE_TEST_EXISTS));
@@ -848,8 +858,4 @@ int main(int argc, char **argv) {
 	TEST(effective_level_correction);
 	return g_test_run();
 }
-#else
-int main() {
-	return 77;
-}
-#endif
+

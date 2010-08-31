@@ -137,7 +137,7 @@ CHASSIS_API gboolean chassis_log_extended_register_target(chassis_log_extended_t
 CHASSIS_API gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
 CHASSIS_API void chassis_log_extended_unregister_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
 CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name);
-CHASSIS_API void chassis_log_extended_rotate(chassis_log_extended_t* log_ext);
+CHASSIS_API void chassis_log_extended_reopen(chassis_log_extended_t* log_ext);
 CHASSIS_API void chassis_log_extended_force_log_all(chassis_log_extended_t* log_ext, const gchar *message);
 CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_extended_t *log_ext, const gchar *logger_name);
 
@@ -156,7 +156,7 @@ CHASSIS_API void chassis_log_extended_log_func(const gchar *log_domain, GLogLeve
 
 CHASSIS_API chassis_log_extended_logger_target_t* chassis_log_extended_logger_target_new(const gchar *filename);
 CHASSIS_API void chassis_log_extended_logger_target_free(chassis_log_extended_logger_target_t* target);
-CHASSIS_API void chassis_log_extended_logger_target_rotate(chassis_log_extended_logger_target_t* target);
+CHASSIS_API gboolean chassis_log_extended_logger_target_reopen(chassis_log_extended_logger_target_t* target, GError **gerr);
 /**
  * Unconditionally writes to a target's log file and formats the string to be written.
  * This function also performs message coalescing, local to the target (i.e. coalescing is per-target).

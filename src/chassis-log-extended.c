@@ -211,7 +211,7 @@ chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_exten
 	return logger;
 }
 
-void chassis_log_extended_rotate(chassis_log_extended_t *log_ext) {
+void chassis_log_extended_reopen(chassis_log_extended_t *log_ext) {
 	GHashTableIter iterator;
 	gpointer key, value;
 
@@ -220,9 +220,16 @@ void chassis_log_extended_rotate(chassis_log_extended_t *log_ext) {
 	g_hash_table_iter_init (&iterator, log_ext->logger_targets);
 	while (g_hash_table_iter_next (&iterator, &key, &value)) {
 		chassis_log_extended_logger_target_t *target = (chassis_log_extended_logger_target_t*)value;
-		(void)key; /* silence unused variable warning */
+		const char *target_name = key;
+		GError *gerr = NULL;
 
-		chassis_log_extended_logger_target_rotate(target);
+		if (FALSE == chassis_log_extended_logger_target_reopen(target, &gerr)) {
+			g_critical("%s: reopening logger target '%s' failed: %s",
+					G_STRLOC,
+					target_name,
+					gerr->message);
+			g_clear_error(&gerr);
+		}
 	}
 }
 
@@ -342,20 +349,22 @@ void chassis_log_extended_logger_target_free(chassis_log_extended_logger_target_
 	g_slice_free(chassis_log_extended_logger_target_t, target);
 }
 
-void chassis_log_extended_logger_target_rotate(chassis_log_extended_logger_target_t* target) {
-	GError *error = NULL;
-	g_assert(target);
+gboolean chassis_log_extended_logger_target_reopen(chassis_log_extended_logger_target_t* target, GError **gerr) {
+	gboolean is_ok = TRUE;
+
+	g_return_val_if_fail(NULL != target, TRUE); /* we have no target, log that, but treat it as "success" as didn't fail to reopen the not existing target */
 	
 	g_mutex_lock(target->fd_lock);
-
-	if (FALSE == chassis_log_extended_logger_target_close(target, &error)) {
-		/* TODO: handle errors somehow */
+	if (FALSE == chassis_log_extended_logger_target_close(target, gerr)) {
+		g_clear_error(gerr); /* if the close fails we may want to log it, but we just failed to close the target logger */
 	}
-	error = NULL;
-	if (FALSE == chassis_log_extended_logger_target_open(target, &error)) {
-		/* TODO: handle errors somehow */
+
+	if (FALSE == chassis_log_extended_logger_target_open(target, gerr)) {
+		is_ok = FALSE;
 	}
 	g_mutex_unlock(target->fd_lock);
+
+	return is_ok;
 }
 
 void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t *target, gchar* logger_name, GLogLevelFlags level, const gchar *message) {
