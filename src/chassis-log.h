@@ -91,7 +91,6 @@
 typedef struct {
 	GLogLevelFlags min_lvl;
 
-	gchar *log_config_filename;
 	gchar *log_filename;
 	gint log_file_fd;
 

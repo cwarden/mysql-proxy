@@ -439,10 +439,11 @@ int main_cmdline(int argc, char **argv) {
 		GOTO_EXIT(EXIT_FAILURE);
 	}
 
-	if (log->log_config_filename) {
-		if (FALSE == chassis_log_load_config(log, log->log_config_filename, &gerr)) {
-			g_critical("%s: %s",
+	if (frontend->log_config_filename) {
+		if (FALSE == chassis_log_load_config(log, frontend->log_config_filename, &gerr)) {
+			g_critical("%s: reading log-config from %s failed: %s",
 					G_STRLOC,
+					frontend->log_config_filename,
 					gerr->message);
 			g_clear_error(&gerr);
 
