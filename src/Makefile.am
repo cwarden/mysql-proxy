@@ -151,7 +151,8 @@ include_HEADERS=\
 	sys-pedantic.h \
 	chassis-plugin.h \
 	chassis-log.h \
-	chassis-log-extended.h \
+	chassis_log_domain.h \
+	chassis_log_backend.h \
 	chassis-keyfile.h \
 	chassis-mainloop.h \
 	chassis-path.h \
