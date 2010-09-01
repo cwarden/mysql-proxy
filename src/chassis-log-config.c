@@ -53,7 +53,7 @@ static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
 	return 0;
 }
 
-gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *file_name, GError **gerr) {
+gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GError **gerr) {
 	GKeyFile *config = g_key_file_new();
 	gchar **keys, **groups;
 	gsize keys_count, groups_count;
@@ -66,7 +66,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 	chassis_log_backend_t *default_target;
 	gboolean ret = FALSE;
 
-	g_assert(log_ext);
+	g_assert(log);
 	g_assert(file_name);
 	if (FALSE == g_key_file_load_from_file(config, file_name, G_KEY_FILE_NONE, gerr)) {
 		goto error_cleanup;
@@ -96,7 +96,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 
 		target = chassis_log_backend_new(target_file);
 		g_hash_table_insert(targets, keys[i], target);
-		chassis_log_extended_register_backend(log_ext, target);
+		chassis_log_register_backend(log, target);
 
 		g_free(target_file);
 	}
@@ -110,7 +110,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 	default_target_name = g_key_file_get_string(config, DEFAULT_LOGGER, TARGET_KEY, NULL);
 	default_target = g_hash_table_lookup(targets, default_target_name);
 	default_logger = chassis_log_domain_new("", default_log_level, default_target);
-	chassis_log_extended_register_domain(log_ext, default_logger);
+	chassis_log_register_domain(log, default_logger);
 
 	g_free(default_log_level_str);
 
@@ -146,7 +146,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 					target = default_target;
 				}
 				logger = chassis_log_domain_new(logger_name, level, target);
-				chassis_log_extended_register_domain(log_ext, logger);
+				chassis_log_register_domain(log, logger);
 			}
 
 			if (level_str) g_free(level_str);

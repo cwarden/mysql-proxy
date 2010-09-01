@@ -215,7 +215,7 @@ int chassis_frontend_set_chassis_options(chassis_frontend_t *frontend, chassis_o
 		"log-file",                 0, 0, G_OPTION_ARG_STRING, &(frontend->log_filename), "log all messages in a file", "<file>");
 
 	chassis_options_add(opts,
-		"log-config-file",          0, 0, G_OPTION_ARG_FILENAME, &(frontend->log_config_filename), "Use extended logging configuration", "<file>");
+		"log-config-file",          0, 0, G_OPTION_ARG_FILENAME, &(frontend->log_config_filename), "Use domain specific logging configuration", "<file>");
 
 	chassis_options_add(opts,
 		"log-use-syslog",           0, 0, G_OPTION_ARG_NONE, &(frontend->use_syslog), "log all messages to syslog", NULL);
@@ -440,21 +440,17 @@ int main_cmdline(int argc, char **argv) {
 	}
 
 	if (log->log_config_filename) {
-		chassis_log_extended_t *log_ext;
-		log_ext = chassis_log_extended_new();
-		if (FALSE == chassis_log_load_config(log_ext, log->log_config_filename, &gerr)) {
+		if (FALSE == chassis_log_load_config(log, log->log_config_filename, &gerr)) {
 			g_critical("%s: %s",
 					G_STRLOC,
 					gerr->message);
 			g_clear_error(&gerr);
 
-			chassis_log_extended_free(log_ext);
 			GOTO_EXIT(EXIT_FAILURE);
 		}
 
 		/* reset the default log handler to our hierarchical logger */
-		g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
-		log->log_ext = log_ext;
+		g_log_set_default_handler(chassis_log_domain_log_func, log);
 
 		/* the system should now be set up, let's try to log something */
 		g_message("this should go to the root logger on level message");

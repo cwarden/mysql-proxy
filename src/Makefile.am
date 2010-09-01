@@ -85,7 +85,6 @@ libmysql_chassis_la_SOURCES = \
 	chassis-plugin.c \
 	chassis-log.c \
 	chassis-log-config.c \
-	chassis-log-extended.c \
 	chassis_log_domain.c \
 	chassis_log_backend.c \
 	chassis-mainloop.c \

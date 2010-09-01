@@ -25,7 +25,7 @@
 #endif
 #include <glib/gstdio.h>
 
-#include "chassis-log-extended.h"
+#include "chassis-log.h"
 
 #include "string-len.h"
 
@@ -124,12 +124,12 @@ START_TEST(split_name) {
 }
 
 START_TEST(creation) {
-	chassis_log_extended_t *log_ext;
+	chassis_log_t *log_ext;
 	chassis_log_backend_t *target;
 	chassis_log_domain_t *logger;
 
 	/* some checks for correct internal setup of the structures */
-	log_ext = chassis_log_extended_new();
+	log_ext = chassis_log_new();
 	g_assert_cmpptr(log_ext, !=, NULL);
 	g_assert_cmpptr(log_ext->domains, !=, NULL);
 	g_assert_cmpptr(log_ext->backends, !=, NULL);
@@ -149,23 +149,23 @@ START_TEST(creation) {
 	g_assert_cmpptr(logger->backend, ==, target);
 
 	/* this frees all of the loggers and targets as well! */
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(register_backend) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *target = chassis_log_backend_new("/tmp/testlog.log");
 	chassis_log_backend_t *target_dup_name = chassis_log_backend_new("/tmp/testlog.log");
 	chassis_log_backend_t *target_lookup;
 	chassis_log_backend_t *null_target = chassis_log_backend_new(NULL);
 
 	/* check corner cases */
-	g_assert_cmpint(chassis_log_extended_register_backend(log_ext, NULL), ==, FALSE);
-	g_assert_cmpint(chassis_log_extended_register_backend(log_ext, null_target), ==, FALSE);
+	g_assert_cmpint(chassis_log_register_backend(log_ext, NULL), ==, FALSE);
+	g_assert_cmpint(chassis_log_register_backend(log_ext, null_target), ==, FALSE);
 	chassis_log_backend_free(null_target);
 
 	/* registering the first target should not fail */
-	if (FALSE == chassis_log_extended_register_backend(log_ext, target)) {
+	if (FALSE == chassis_log_register_backend(log_ext, target)) {
 		chassis_log_backend_free(target);
 		g_assert_not_reached();
 	}
@@ -176,22 +176,22 @@ START_TEST(register_backend) {
 	/* registering the same target twice should not succeed 
 	 * Note: don't free target in else branch!
 	 */
-	if (TRUE == chassis_log_extended_register_backend(log_ext, target)) {
+	if (TRUE == chassis_log_register_backend(log_ext, target)) {
 		g_assert_not_reached();
 	}
 
 	/* registering a target with the same file path should not succeed, either */
-	if (TRUE == chassis_log_extended_register_backend(log_ext, target_dup_name)) {
+	if (TRUE == chassis_log_register_backend(log_ext, target_dup_name)) {
 		g_assert_not_reached();
 	} else {
 		chassis_log_backend_free(target_dup_name);
 	}
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(register_domain) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *target = chassis_log_backend_new("/tmp/testlog.log");
 	chassis_log_domain_t *root;
 	chassis_log_domain_t *root_reg;
@@ -202,35 +202,35 @@ START_TEST(register_domain) {
 
 	root = chassis_log_domain_new("", G_LOG_LEVEL_ERROR, target);
 	aab = chassis_log_domain_new("a.a.b", G_LOG_LEVEL_INFO, target);
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, aab);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, aab);
 
 	/* for debugging, dump the logger table */
 #if 0
 	g_hash_table_foreach(log_ext->loggers, dump_logger_hash_iter, NULL);
 #endif
 	/* this should be the same as the one we registered */
-	root_reg = chassis_log_extended_get_logger(log_ext, "");
+	root_reg = chassis_log_get_logger(log_ext, "");
 	g_assert_cmpptr(root, ==, root_reg);
 	g_assert_cmpint(root_reg->is_implicit, ==, FALSE);
 	/* check that the implicit logger for 'a' has been created */
-	a_reg = chassis_log_extended_get_logger(log_ext, "a");
+	a_reg = chassis_log_get_logger(log_ext, "a");
 	g_assert_cmpptr(a_reg, !=, NULL);
 	g_assert_cmpint(a_reg->is_implicit, ==, TRUE);
 	/* check that the implicit logger for 'a.a' has been created */
-	aa_reg = chassis_log_extended_get_logger(log_ext, "a.a");
+	aa_reg = chassis_log_get_logger(log_ext, "a.a");
 	g_assert_cmpptr(aa_reg, !=, NULL);
 	g_assert_cmpint(aa_reg->is_implicit, ==, TRUE);
 	/* this should be the same as the one we registered */
-	aab_reg = chassis_log_extended_get_logger(log_ext, "a.a.b");
+	aab_reg = chassis_log_get_logger(log_ext, "a.a.b");
 	g_assert_cmpptr(aab, ==, aab_reg);
 	g_assert_cmpint(aab_reg->is_implicit, ==, FALSE);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(effective_level) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *target = chassis_log_backend_new("/tmp/testlog.log");
 	chassis_log_domain_t *logger1;
 	chassis_log_domain_t *logger2;
@@ -246,13 +246,13 @@ START_TEST(effective_level) {
 	 */
 	logger1 = chassis_log_domain_new("", G_LOG_LEVEL_ERROR, target);
 	logger2 = chassis_log_domain_new("a.b", G_LOG_LEVEL_INFO, target);
-	chassis_log_extended_register_domain(log_ext, logger1);
-	chassis_log_extended_register_domain(log_ext, logger2);
+	chassis_log_register_domain(log_ext, logger1);
+	chassis_log_register_domain(log_ext, logger2);
 	
-	effective_level = chassis_log_extended_get_effective_level(log_ext, "a.b");
+	effective_level = chassis_log_get_effective_level(log_ext, "a.b");
 	g_assert_cmpint(effective_level, ==, G_LOG_LEVEL_INFO);
 
-	effective_level = chassis_log_extended_get_effective_level(log_ext, "a");
+	effective_level = chassis_log_get_effective_level(log_ext, "a");
 	g_assert_cmpint(effective_level, ==, G_LOG_LEVEL_ERROR);
 	/* for debugging, dump the logger table */
 #if 0
@@ -260,15 +260,15 @@ START_TEST(effective_level) {
 #endif
 
 	/* check for the presence implicit logger instance */
-	logger2 = chassis_log_extended_get_logger(log_ext, "a");
+	logger2 = chassis_log_get_logger(log_ext, "a");
 	g_assert_cmpptr(logger2, !=, NULL);
 	g_assert_cmpint(logger2->is_implicit, ==, TRUE);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(implicit_target_one_level) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *default_target = chassis_log_backend_new("/tmp/default.log");
 	chassis_log_backend_t *ab_target = chassis_log_backend_new("/tmp/ab.log");
 	chassis_log_domain_t *root;
@@ -277,21 +277,21 @@ START_TEST(implicit_target_one_level) {
 
 	root = chassis_log_domain_new("", G_LOG_LEVEL_ERROR, default_target);
 	ab = chassis_log_domain_new("a.b", G_LOG_LEVEL_INFO, ab_target);
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, ab);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, ab);
 	/*
 	 * check that in a hierarchy with an implicit logger its target is properly set up
 	 * we have one default root logger and one for "a.b". the logger for "a" should log to root's log target
 	 */
-	a = chassis_log_extended_get_logger(log_ext, "a");
+	a = chassis_log_get_logger(log_ext, "a");
 	g_assert_cmpptr(a->backend, ==, default_target);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 /* very similar to the targets_one_level test, but checks for correct resolution across multiple implicit loggers */
 START_TEST(implicit_targets_multi_level) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *default_target = chassis_log_backend_new("/tmp/default.log");
 	chassis_log_backend_t *aaab_target = chassis_log_backend_new("/tmp/aaab.log");
 	chassis_log_domain_t *root;
@@ -300,25 +300,25 @@ START_TEST(implicit_targets_multi_level) {
 
 	root = chassis_log_domain_new("", G_LOG_LEVEL_ERROR, default_target);
 	aaab = chassis_log_domain_new("a.a.a.b", G_LOG_LEVEL_INFO, aaab_target);
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, aaab);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, aaab);
 	/*
 	 * check that in a hierarchy with multiple implicit loggers their target is properly set up
 	 * we have one default root logger and one for "a.a.a.b".
 	 * the loggers for the one's in between should log to root's log target
 	 */
-	intermediate = chassis_log_extended_get_logger(log_ext, "a");
+	intermediate = chassis_log_get_logger(log_ext, "a");
 	g_assert_cmpptr(intermediate->backend, ==, default_target);
-	intermediate = chassis_log_extended_get_logger(log_ext, "a.a");
+	intermediate = chassis_log_get_logger(log_ext, "a.a");
 	g_assert_cmpptr(intermediate->backend, ==, default_target);
-	intermediate = chassis_log_extended_get_logger(log_ext, "a.a.a");
+	intermediate = chassis_log_get_logger(log_ext, "a.a.a");
 	g_assert_cmpptr(intermediate->backend, ==, default_target);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(open_close_target) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *target;
 	GError *error = NULL;
 	gchar *tmp_file_name;
@@ -332,7 +332,7 @@ START_TEST(open_close_target) {
 		g_printerr("Could not open logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 
@@ -343,7 +343,7 @@ START_TEST(open_close_target) {
 		g_printerr("Could not close logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 	/* check that the close has properly cleared the file descriptor */
@@ -351,23 +351,23 @@ START_TEST(open_close_target) {
 
 	g_unlink(tmp_file_name);
 	g_free(tmp_file_name);
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(target_write) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_backend_t *target;
 	gchar *tmp_file_name = create_tmp_file_name();
 	GError *error = NULL;
 	gchar *log_file_contents;
 	
 	target = chassis_log_backend_new(tmp_file_name);
-	chassis_log_extended_register_backend(log_ext, target);
+	chassis_log_register_backend(log_ext, target);
 	if (FALSE == chassis_log_backend_open(target, &error)) {
 		g_printerr("Could not open logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 
@@ -377,7 +377,7 @@ START_TEST(target_write) {
 		g_printerr("Could not close logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 	log_file_contents = read_file_contents(tmp_file_name);
@@ -387,11 +387,11 @@ START_TEST(target_write) {
 	g_free(log_file_contents);
 	g_unlink(tmp_file_name);
 	g_free(tmp_file_name);
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(target_rotate) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *tmp_file_name = create_tmp_file_name();
 	gchar *rotate_file_name = g_strdup_printf("%s.%s", tmp_file_name, "old");
 	chassis_log_backend_t *target;
@@ -404,12 +404,12 @@ START_TEST(target_rotate) {
 	 */
 	
 	target = chassis_log_backend_new(tmp_file_name);
-	chassis_log_extended_register_backend(log_ext, target);
+	chassis_log_register_backend(log_ext, target);
 	if (FALSE == chassis_log_backend_open(target, &error)) {
 		g_printerr("Could not open logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 
@@ -420,7 +420,7 @@ START_TEST(target_rotate) {
 		g_printerr("Could not reopen logger target '%s': %s (%d)", tmp_file_name, error->message, error->code);
 		g_error_free(error);
 		g_free(tmp_file_name);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 	g_assert_no_error(error);
@@ -445,11 +445,11 @@ START_TEST(target_rotate) {
 	g_free(rotate_file_name);
 	g_unlink(tmp_file_name);
 	g_free(tmp_file_name);
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(rotate_all) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_a = create_tmp_file_name();
 	gchar *log_file_b = create_tmp_file_name();
 	gchar *rotate_file_name_a = g_strdup_printf("%s.%s", log_file_a, "old");
@@ -459,29 +459,29 @@ START_TEST(rotate_all) {
 	GError *error = NULL;
 
 	target_a = chassis_log_backend_new(log_file_a);
-	chassis_log_extended_register_backend(log_ext, target_a);
+	chassis_log_register_backend(log_ext, target_a);
 	if (FALSE == chassis_log_backend_open(target_a, &error)) {
 		g_printerr("Could not open logger target '%s': %s (%d)", log_file_a, error->message, error->code);
 		g_error_free(error);
 		g_free(log_file_a);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 
 	target_b = chassis_log_backend_new(log_file_b);
-	chassis_log_extended_register_backend(log_ext, target_b);
+	chassis_log_register_backend(log_ext, target_b);
 	if (FALSE == chassis_log_backend_open(target_b, &error)) {
 		g_printerr("Could not open logger target '%s': %s (%d)", log_file_b, error->message, error->code);
 		g_error_free(error);
 		g_free(log_file_b);
-		chassis_log_extended_free(log_ext);
+		chassis_log_free(log_ext);
 		g_assert_not_reached();
 	}
 
 	g_rename(log_file_a, rotate_file_name_a);
 	g_rename(log_file_b, rotate_file_name_b);
 
-	chassis_log_extended_reopen(log_ext);
+	chassis_log_reopen(log_ext);
 
 	g_assert(g_file_test(log_file_a, G_FILE_TEST_EXISTS));
 	g_assert(g_file_test(rotate_file_name_a, G_FILE_TEST_EXISTS));
@@ -500,26 +500,26 @@ START_TEST(rotate_all) {
 	g_unlink(log_file_b);
 	g_free(log_file_b);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 }
 
 START_TEST(log_func_implicit_logger_creation) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	chassis_log_domain_t *root;
 	chassis_log_backend_t *target;
 	gchar *tmp_file_name = create_tmp_file_name();
 	gchar *log_file_contents;
 
 	target = chassis_log_backend_new(tmp_file_name);
-	chassis_log_extended_register_backend(log_ext, target);
+	chassis_log_register_backend(log_ext, target);
 	root = chassis_log_domain_new("", G_LOG_LEVEL_MESSAGE, target);
-	chassis_log_extended_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, root);
 	
 	/* install our default handler, don't bother with registering each log domain individually
 	 * revert the fatal mask g_test_init sets.
 	 */
 	g_log_set_always_fatal(G_LOG_FATAL_MASK);
-	g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+	g_log_set_default_handler(chassis_log_domain_log_func, log_ext);
 	/* log two messages, one directly going to the root logger (which we set explicitly)
 	 * and one on an ad-hoc logger which bubbles up to the root logger
 	 * check that both messages get written to disk
@@ -537,7 +537,7 @@ START_TEST(log_func_implicit_logger_creation) {
 	g_hash_table_foreach(log_ext->loggers, dump_logger_hash_iter, NULL);
 #endif
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 
 	log_file_contents = read_file_contents(tmp_file_name);
 	g_assert_cmpptr(g_strstr_len(log_file_contents, -1, "root-direct"), !=, NULL);
@@ -549,7 +549,7 @@ START_TEST(log_func_implicit_logger_creation) {
 }
 
 START_TEST(force_log_all) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_root =  create_tmp_file_name();
 	gchar *log_file_aab = create_tmp_file_name();
 	gchar *log_file_b  = create_tmp_file_name();
@@ -561,7 +561,7 @@ START_TEST(force_log_all) {
 	 * revert the fatal mask g_test_init sets.
 	 */
 	g_log_set_always_fatal(G_LOG_FATAL_MASK);
-	g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+	g_log_set_default_handler(chassis_log_domain_log_func, log_ext);
 
 	/* set up explicit targets for:
 	 *  - root logger
@@ -577,13 +577,13 @@ START_TEST(force_log_all) {
 	aab = chassis_log_domain_new("a.a.b", G_LOG_LEVEL_MESSAGE, target_aab);
 	b = chassis_log_domain_new("b", G_LOG_LEVEL_DEBUG, target_b);
 	
-	chassis_log_extended_register_backend(log_ext, target_root);
-	chassis_log_extended_register_backend(log_ext, target_aab);
-	chassis_log_extended_register_backend(log_ext, target_b);
+	chassis_log_register_backend(log_ext, target_root);
+	chassis_log_register_backend(log_ext, target_aab);
+	chassis_log_register_backend(log_ext, target_b);
 
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, aab);
-	chassis_log_extended_register_domain(log_ext, b);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, aab);
+	chassis_log_register_domain(log_ext, b);
 	
 #undef G_LOG_DOMAIN
 #define G_LOG_DOMAIN "a.a.b"
@@ -596,9 +596,9 @@ START_TEST(force_log_all) {
 #undef G_LOG_DOMAIN
 #define G_LOG_DOMAIN NULL
 	
-	chassis_log_extended_force_log_all(log_ext, "broadcast");
+	chassis_log_force_log_all(log_ext, "broadcast");
 	/* free the log structure, to ensure that all files are flushed and closed. */
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 	
 	/* root log file should contain "aa-root-indirect" and "broadcast" */
 	log_file_contents = read_file_contents(log_file_root);
@@ -628,7 +628,7 @@ START_TEST(force_log_all) {
 }
 
 START_TEST(coalescing) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_root =  create_tmp_file_name();
 	gchar *log_file_contents;
 	gchar *broadcast_first, *broadcast_last;
@@ -639,13 +639,13 @@ START_TEST(coalescing) {
 	 * revert the fatal mask g_test_init sets.
 	 */
 	g_log_set_always_fatal(G_LOG_FATAL_MASK);
-	g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+	g_log_set_default_handler(chassis_log_domain_log_func, log_ext);
 
 	target_root = chassis_log_backend_new(log_file_root);
 	root = chassis_log_domain_new("", G_LOG_LEVEL_MESSAGE, target_root);
 	
-	chassis_log_extended_register_backend(log_ext, target_root);
-	chassis_log_extended_register_domain(log_ext, root);
+	chassis_log_register_backend(log_ext, target_root);
+	chassis_log_register_domain(log_ext, root);
 
 	/* log six messages:
 	 *  - "repeat" on MESSAGE
@@ -664,10 +664,10 @@ START_TEST(coalescing) {
 	g_debug("repeat");
 	g_message("repeat");
 	g_message("no-repeat");
-	chassis_log_extended_force_log_all(log_ext, "broadcast");
-	chassis_log_extended_force_log_all(log_ext, "broadcast");
+	chassis_log_force_log_all(log_ext, "broadcast");
+	chassis_log_force_log_all(log_ext, "broadcast");
 	
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 
 	/* root log file should contain "repeat", "last message repeated 1 times" and "no-repeat" entries */
 	log_file_contents = read_file_contents(log_file_root);
@@ -688,7 +688,7 @@ START_TEST(coalescing) {
 }
 
 START_TEST(coalescing_logger_names) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_root =  create_tmp_file_name();
 	gchar *log_file_contents;
 	gchar *broadcast_first, *broadcast_last;
@@ -699,17 +699,17 @@ START_TEST(coalescing_logger_names) {
 	 * revert the fatal mask g_test_init sets.
 	 */
 	g_log_set_always_fatal(G_LOG_FATAL_MASK);
-	g_log_set_default_handler(chassis_log_extended_log_func, log_ext);
+	g_log_set_default_handler(chassis_log_domain_log_func, log_ext);
 
 	target_root = chassis_log_backend_new(log_file_root);
 	root = chassis_log_domain_new("", G_LOG_LEVEL_MESSAGE, target_root);
 	aa = chassis_log_domain_new("a.a", G_LOG_LEVEL_MESSAGE, target_root);
 	ab = chassis_log_domain_new("a.b", G_LOG_LEVEL_MESSAGE, target_root);
 	
-	chassis_log_extended_register_backend(log_ext, target_root);
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, aa);
-	chassis_log_extended_register_domain(log_ext, ab);
+	chassis_log_register_backend(log_ext, target_root);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, aa);
+	chassis_log_register_domain(log_ext, ab);
 
 #undef G_LOG_DOMAIN
 #define G_LOG_DOMAIN ""
@@ -727,7 +727,7 @@ START_TEST(coalescing_logger_names) {
 #undef G_LOG_DOMAIN
 #define G_LOG_DOMAIN NULL
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 
 	log_file_contents = read_file_contents(log_file_root);
 	g_print("log file:\n%s", log_file_contents);
@@ -745,7 +745,7 @@ START_TEST(coalescing_logger_names) {
 }
 
 START_TEST(effective_level_correction) {
-	chassis_log_extended_t *log_ext = chassis_log_extended_new();
+	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_root =  create_tmp_file_name();
 	gchar *log_file_abcd = create_tmp_file_name();
 	gchar *log_file_a  = create_tmp_file_name();
@@ -769,27 +769,27 @@ START_TEST(effective_level_correction) {
 
 	target_root = chassis_log_backend_new(log_file_root);
 	target_abcd = chassis_log_backend_new(log_file_abcd);
-	chassis_log_extended_register_backend(log_ext, target_root);
-	chassis_log_extended_register_backend(log_ext, target_abcd);
+	chassis_log_register_backend(log_ext, target_root);
+	chassis_log_register_backend(log_ext, target_abcd);
 	root = chassis_log_domain_new("", G_LOG_LEVEL_CRITICAL, target_root);
 	abcd = chassis_log_domain_new("a.b.c.d", G_LOG_LEVEL_DEBUG, target_abcd);
-	chassis_log_extended_register_domain(log_ext, root);
-	chassis_log_extended_register_domain(log_ext, abcd);
+	chassis_log_register_domain(log_ext, root);
+	chassis_log_register_domain(log_ext, abcd);
 
 	/* check the implicit loggers that were created, by checking against a known explicit one */
-	root = chassis_log_extended_get_logger(log_ext, "");
+	root = chassis_log_get_logger(log_ext, "");
 	g_assert_cmpint(root->is_implicit, ==, FALSE);
-	a = chassis_log_extended_get_logger(log_ext, "a");
+	a = chassis_log_get_logger(log_ext, "a");
 	g_assert_cmpptr(root->backend, ==, a->backend);
 	g_assert_cmpint(a->is_implicit, ==, TRUE);
 	g_assert_cmpint(a->effective_level, ==, G_LOG_LEVEL_CRITICAL);
 
-	ab = chassis_log_extended_get_logger(log_ext, "a.b");
+	ab = chassis_log_get_logger(log_ext, "a.b");
 	g_assert_cmpptr(root->backend, ==, ab->backend);
 	g_assert_cmpint(ab->is_implicit, ==, TRUE);
 	g_assert_cmpint(ab->effective_level, ==, G_LOG_LEVEL_CRITICAL);
 
-	abc = chassis_log_extended_get_logger(log_ext, "a.b.c");
+	abc = chassis_log_get_logger(log_ext, "a.b.c");
 	g_assert_cmpptr(root->backend, ==, abc->backend);
 	g_assert_cmpint(abc->is_implicit, ==, TRUE);
 	g_assert_cmpint(abc->effective_level, ==, G_LOG_LEVEL_CRITICAL);
@@ -799,30 +799,30 @@ START_TEST(effective_level_correction) {
 	 * but note that you have to "get" the loggers again, because the updates might be lazy!
 	 */
 	target_a = chassis_log_backend_new(log_file_a);
-	chassis_log_extended_register_backend(log_ext, target_a);
+	chassis_log_register_backend(log_ext, target_a);
 	a = chassis_log_domain_new("a", G_LOG_LEVEL_WARNING, target_a);
-	chassis_log_extended_register_domain(log_ext, a);
+	chassis_log_register_domain(log_ext, a);
 
-	a = chassis_log_extended_get_logger(log_ext, "a");
-	ab = chassis_log_extended_get_logger(log_ext, "a.b");
+	a = chassis_log_get_logger(log_ext, "a");
+	ab = chassis_log_get_logger(log_ext, "a.b");
 	g_assert_cmpptr(a->backend, ==, ab->backend);
 	g_assert_cmpint(a->effective_level, ==, G_LOG_LEVEL_WARNING);
 	g_assert_cmpint(a->is_implicit, ==, FALSE);
 	g_assert_cmpint(ab->is_implicit, ==, TRUE);
 	g_assert_cmpint(ab->effective_level, ==, G_LOG_LEVEL_WARNING);
 	
-	abc = chassis_log_extended_get_logger(log_ext, "a.b.c");
+	abc = chassis_log_get_logger(log_ext, "a.b.c");
 	g_assert_cmpptr(a->backend, ==, abc->backend);
 	g_assert_cmpint(abc->is_implicit, ==, TRUE);
 	g_assert_cmpint(abc->effective_level, ==, G_LOG_LEVEL_WARNING);
 	
 	/* finally make sure the explicit logger we registered has not been changed */
-	abcd = chassis_log_extended_get_logger(log_ext, "a.b.c.d");
+	abcd = chassis_log_get_logger(log_ext, "a.b.c.d");
 	g_assert_cmpint(abcd->is_implicit, ==, FALSE);
 	g_assert_cmpptr(abcd->backend, ==, target_abcd);
 	g_assert_cmpint(abcd->effective_level, ==, G_LOG_LEVEL_DEBUG);
 
-	chassis_log_extended_free(log_ext);
+	chassis_log_free(log_ext);
 	/* free and unlink the files */
 	g_unlink(log_file_root);
 	g_free(log_file_root);
