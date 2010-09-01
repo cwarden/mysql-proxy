@@ -5,13 +5,16 @@
 
 #include <glib.h>
 
+#include "chassis-exports.h"
+
 #include "chassis_log_backend.h" /* the backends like syslog, file, stderr, ... */
 
+typedef struct chassis_log_domain chassis_log_domain_t;
 /**
  * A logger describes the attributes of a point in the logging hierarchy, such as the effective log level
  * and the backend the messages go to.
  */
-typedef struct chassis_log_domain {
+struct chassis_log_domain {
 	gchar *name;					/**< the full name of this logger */
 	GLogLevelFlags min_level;			/**< the minimum log level for this logger */
 	GLogLevelFlags effective_level;			/**< the effective log level, calculated from min_level and its parent's min_levels */
@@ -21,7 +24,7 @@ typedef struct chassis_log_domain {
 	
 	struct chassis_log_domain *parent;		/**< our parent in the hierarchy, NULL for the root logger */
 	GPtrArray *children;				/**< the list of loggers directly below us in the hierarchy */
-} chassis_log_domain_t;
+};
 
 CHASSIS_API chassis_log_domain_t* chassis_log_domain_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *backend);
 CHASSIS_API void chassis_log_domain_free(chassis_log_domain_t* logger);

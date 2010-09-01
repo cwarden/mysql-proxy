@@ -118,7 +118,11 @@ check_chassis_log_SOURCES  = check_chassis_log.c $(top_srcdir)/src/chassis-log.c
 check_chassis_log_CPPFLAGS = -I$(top_srcdir)/src/ $(GLIB_CFLAGS) $(MYSQL_CFLAGS) $(GMODULE_CFLAGS)
 check_chassis_log_LDADD    = $(GLIB_LIBS) $(GMODULE_LIBS)
 
-check_chassis_log_extended_SOURCES  = check_chassis_log_extended.c $(top_srcdir)/src/chassis-log-extended.c
+check_chassis_log_extended_SOURCES  = \
+	check_chassis_log_extended.c \
+	$(top_srcdir)/src/chassis_log_domain.c \
+	$(top_srcdir)/src/chassis_log_backend.c \
+	$(top_srcdir)/src/chassis-log-extended.c
 check_chassis_log_extended_CPPFLAGS = -I$(top_srcdir)/src/ $(GLIB_CFLAGS) $(MYSQL_CFLAGS) $(GMODULE_CFLAGS)
 check_chassis_log_extended_LDADD    = $(GLIB_LIBS) $(GMODULE_LIBS) $(GTHREAD_LIBS)
 

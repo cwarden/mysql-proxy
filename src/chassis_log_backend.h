@@ -1,12 +1,15 @@
 #ifndef __CHASSIS_LOG_BACKEND_H__
 #define __CHASSIS_LOG_BACKEND_H__
 
-/* formerly known as _extended_logger_target_t */
+#include <glib.h>
+#include <time.h> /* for time_t */
+
+#include "chassis-exports.h"
 
 /* forward decl, so we can use it in the function ptr */
 typedef struct chassis_log_backend chassis_log_backend_t;
 
-typedef void(*chassis_log_backend_write_func_t)(chassis_log_backend_t *target, GLogLevelFlags level, gchar *message, gsize len);
+typedef void (*chassis_log_backend_write_func_t)(chassis_log_backend_t *target, GLogLevelFlags level, gchar *message, gsize len);
 
 /**
  * A logger target encapsulates the ultimate target of a log message and its writing.
