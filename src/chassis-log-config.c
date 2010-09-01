@@ -20,10 +20,10 @@
 #include "chassis-exports.h"
 #include "chassis-log.h"
 
-#define TARGETS_GROUP "targets"
-#define DEFAULT_LOGGER "default"
+#define BACKENDS_GROUP "backends"
+#define DEFAULT_DOMAIN "default"
 #define LEVEL_KEY "level"
-#define TARGET_KEY "target"
+#define BACKEND_KEY "backend"
 
 static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
 	GQuark level_quark = g_quark_from_string(level_str);
@@ -53,17 +53,29 @@ static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
 	return 0;
 }
 
+GQuark chassis_log_error(void) {
+	return g_quark_from_static_string("chassis_log_error");
+}
+
+typedef enum {
+	CHASSIS_LOG_ERROR_NO_GROUP,
+	CHASSIS_LOG_ERROR_NO_BACKENDS,
+	CHASSIS_LOG_ERROR_NO_LOGLEVEL,
+	CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
+	CHASSIS_LOG_ERROR_UNKNOWN_BACKEND
+} chassis_log_error_t;
+
 gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GError **gerr) {
 	GKeyFile *config = g_key_file_new();
 	gchar **keys, **groups;
 	gsize keys_count, groups_count;
 	guint i = 0;
-	GHashTable *targets = g_hash_table_new(g_str_hash, g_str_equal);  /* target name -> target */
+	GHashTable *backends = g_hash_table_new(g_str_hash, g_str_equal);  /* backend name -> backend */
 	gchar *default_log_level_str;
 	GLogLevelFlags default_log_level;
-	gchar *default_target_name;
-	chassis_log_domain_t *default_logger;
-	chassis_log_backend_t *default_target;
+	gchar *default_backend_name;
+	chassis_log_domain_t *default_domain;
+	chassis_log_backend_t *default_backend;
 	gboolean ret = FALSE;
 
 	g_assert(log);
@@ -72,85 +84,126 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 		goto error_cleanup;
 	}
 
-	if (!g_key_file_has_group(config, TARGETS_GROUP)) {
-		/* FIXME: complain about missing targets */
+	if (!g_key_file_has_group(config, BACKENDS_GROUP)) {
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_NO_GROUP,
+				"%s has no group [%s]",
+				file_name,
+				BACKENDS_GROUP);
 		goto error_cleanup;
 	}
 
-	if (!g_key_file_has_group(config, DEFAULT_LOGGER)) {
+	if (!g_key_file_has_group(config, DEFAULT_DOMAIN)) {
 		/* FIXME: should we take it from the global config for compatibility/convenience reasons? */
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_NO_GROUP,
+				"%s has no group [%s]",
+				file_name,
+				DEFAULT_DOMAIN);
 		goto error_cleanup;
 	}
 
-	/* collect all the targets and register them */
-	keys = g_key_file_get_keys(config, TARGETS_GROUP, &keys_count, NULL);
+	/* collect all the backends and register them */
+	keys = g_key_file_get_keys(config, BACKENDS_GROUP, &keys_count, NULL);
 	if (keys_count == 0) {
-		/* FIXME: complain about missing targets */
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_NO_BACKENDS,
+				"%s has no backends defined in group [%s]",
+				file_name,
+				BACKENDS_GROUP);
 		goto error_cleanup;
 	}
 
-	/* register all targets we've found */
+	/* register all backends we've found */
 	for (i = 0; i < keys_count; i++) {
-		chassis_log_backend_t *target;
-		gchar *target_file = g_key_file_get_string(config, TARGETS_GROUP, keys[i], NULL);
+		chassis_log_backend_t *backend;
+		gchar *backend_file = g_key_file_get_string(config, BACKENDS_GROUP, keys[i], NULL);
 
-		target = chassis_log_backend_new(target_file);
-		g_hash_table_insert(targets, keys[i], target);
-		chassis_log_register_backend(log, target);
+		backend = chassis_log_backend_new(backend_file);
+		g_hash_table_insert(backends, keys[i], backend);
+		chassis_log_register_backend(log, backend);
 
-		g_free(target_file);
+		g_free(backend_file);
 	}
 
-	default_log_level_str = g_key_file_get_string(config, DEFAULT_LOGGER, LEVEL_KEY, NULL);
+	default_log_level_str = g_key_file_get_string(config, DEFAULT_DOMAIN, LEVEL_KEY, NULL);
+	if (NULL == default_log_level_str) {
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_NO_LOGLEVEL,
+				"default backend needs a log-level set");
+		goto error_cleanup;
+	}
+
 	default_log_level = log_level_string_to_level(default_log_level_str);
 	if (default_log_level == 0) {
-		/* FIXME: complain about unknown log level, don't just default to critical */
-		default_log_level = G_LOG_LEVEL_CRITICAL;
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
+				"%s is not a valid log-level",
+				default_log_level_str);
+		g_free(default_log_level_str);
+		goto error_cleanup;
 	}
-	default_target_name = g_key_file_get_string(config, DEFAULT_LOGGER, TARGET_KEY, NULL);
-	default_target = g_hash_table_lookup(targets, default_target_name);
-	default_logger = chassis_log_domain_new("", default_log_level, default_target);
-	chassis_log_register_domain(log, default_logger);
+
+	default_backend_name = g_key_file_get_string(config, DEFAULT_DOMAIN, BACKEND_KEY, NULL);
+	if (NULL == default_backend_name) {
+		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
+				"[%s].%s has to be set",
+				DEFAULT_DOMAIN,
+				BACKEND_KEY);
+		goto error_cleanup;
+	}
+	default_backend = g_hash_table_lookup(backends, default_backend_name);
+	default_domain = chassis_log_domain_new("", default_log_level, default_backend);
+	chassis_log_register_domain(log, default_domain);
 
 	g_free(default_log_level_str);
 
-
-	/* register all loggers defined in the config file */
+	/* register all domains defined in the config file */
 	groups = g_key_file_get_groups(config, &groups_count);
-	if (groups_count > 2) {	/* 2 because we already confirmed that we have "targets" and "default" groups */
+	if (groups_count > 2) {	/* 2 because we already confirmed that we have "backends" and "default" groups */
 		guint group_idx;
+
 		for (group_idx = 0; group_idx < groups_count; group_idx++) {
-			gchar *logger_name = groups[group_idx]; /* the group's name is the logger name */
+			gchar *domain_name = groups[group_idx]; /* the group's name is the domain name */
 			gchar *level_str;
 			GLogLevelFlags level;
-			gchar *target_name;
-			chassis_log_domain_t *logger;
-			chassis_log_backend_t *target;
+			gchar *backend_name;
+			chassis_log_domain_t *domain;
+			chassis_log_backend_t *backend;
 
 			/* skip the two special groups in the file */
-			if (g_str_equal(TARGETS_GROUP, groups[group_idx]) || g_str_equal(DEFAULT_LOGGER, groups[group_idx])) {
+			if (g_str_equal(BACKENDS_GROUP, groups[group_idx]) || g_str_equal(DEFAULT_DOMAIN, groups[group_idx])) {
 				continue;
 			}
-			level_str = g_key_file_get_string(config, logger_name, LEVEL_KEY, NULL);
+			level_str = g_key_file_get_string(config, domain_name, LEVEL_KEY, NULL);
 			level = log_level_string_to_level(level_str);
 			if (level == 0) {
-				/* FIXME: complain about unknown log level, don't just default to critical */
-				level = G_LOG_LEVEL_CRITICAL;
+				g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
+					"%s is not a valid log-level",
+					level_str);
+
+				if (level_str) g_free(level_str);
+
+				goto error_cleanup;
 			}
 			
-			target_name = g_key_file_get_string(config, logger_name, TARGET_KEY, NULL);
-			if (target_name) {
-				target = g_hash_table_lookup(targets, target_name);
-				if (!target) {
-					/* FIXME: complain about using unknown target, don't just fall back to the root target */
-					target = default_target;
+			backend_name = g_key_file_get_string(config, domain_name, BACKEND_KEY, NULL);
+			if (backend_name) {
+				backend = g_hash_table_lookup(backends, backend_name);
+				if (!backend) {
+					g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_UNKNOWN_BACKEND,
+						"[%s].%s %s is not defined in [%s]",
+						domain_name,
+						BACKEND_KEY,
+						backend_name,
+						BACKENDS_GROUP);
+
+					if (level_str) g_free(level_str);
+					if (backend_name) g_free(backend_name);
+
+					goto error_cleanup;
 				}
-				logger = chassis_log_domain_new(logger_name, level, target);
-				chassis_log_register_domain(log, logger);
+				domain = chassis_log_domain_new(domain_name, level, backend);
+				chassis_log_register_domain(log, domain);
 			}
 
 			if (level_str) g_free(level_str);
-			if (target_name) g_free(target_name);
+			if (backend_name) g_free(backend_name);
 		}
 	}
 	g_strfreev(groups);
@@ -159,7 +212,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 
 error_cleanup:
 	g_strfreev(keys);
-	g_hash_table_destroy(targets);
+	g_hash_table_destroy(backends);
 	g_key_file_free(config);
 
 	return ret;
