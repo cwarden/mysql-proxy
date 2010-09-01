@@ -639,6 +639,14 @@ exit_nicely:
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_STOP_PENDING, 0);
 #endif
 
+#ifdef HAVE_SIGACTION
+	/* reset the handler */
+	sigsegv_sa.sa_handler = SIG_DFL;
+	if (frontend->invoke_dbg_on_crash && !(RUNNING_ON_VALGRIND)) {
+		sigaction(SIGSEGV, &sigsegv_sa, NULL);
+	}
+#endif
+
 	chassis_frontend_free(frontend);	
 	
 	if (gerr) g_error_free(gerr);
@@ -651,14 +659,6 @@ exit_nicely:
 	
 #ifdef _WIN32
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_STOPPED, 0);
-#endif
-
-#ifdef HAVE_SIGACTION
-	/* reset the handler */
-	sigsegv_sa.sa_handler = SIG_DFL;
-	if (frontend->invoke_dbg_on_crash && !(RUNNING_ON_VALGRIND)) {
-		sigaction(SIGSEGV, &sigsegv_sa, NULL);
-	}
 #endif
 
 	return exit_code;
