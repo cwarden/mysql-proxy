@@ -64,10 +64,7 @@
  * single function, namely chassis_log_extended_log_func().
  */
 
-/* forward decl, so we can use it in the function ptr */
-struct chassis_log_extended_logger_target;
-
-typedef void(*chassis_log_target_write_func_t)(struct chassis_log_extended_logger_target *target, GLogLevelFlags level, gchar *message, gsize len);
+#include "chassis_log_backend.h" /* the backends like syslog, file, stderr, ... */
 
 /**
  * The extended log stores the available hierarchical loggers and manages operations on them.
@@ -77,27 +74,9 @@ typedef void(*chassis_log_target_write_func_t)(struct chassis_log_extended_logge
  */
 typedef struct chassis_log_extended {
 	GHashTable *loggers;			/**< <gchar*, chassis_log_extended_logger_t*> a map of all available loggers, keyed by logger name */
-	GHashTable *logger_targets;		/**< <gchar*, chassis_log_extended_logger_target_t*> a map of all available logger_targets, keyed by file name */
+	GHashTable *logger_targets;		/**< <gchar*, chassis_log_backend_t*> a map of all available logger_targets, keyed by file name */
 } chassis_log_extended_t;
 
-/**
- * A logger target encapsulates the ultimate target of a log message and its writing.
- * 
- * Currently it supports file-based logs or anything that doesn't need extra information, like syslog.
- */
-typedef struct chassis_log_extended_logger_target {
-	gchar *file_path;				/**< absolute path to the log file */
-	gint fd;						/**< file descriptor for this log file */
-	GMutex *fd_lock;				/**< lock to serialize log message writing */
-	chassis_log_target_write_func_t log_func;	/**< pointer to the function that actually writes the message */
-
-	GString *log_str;				/**< a reusable string for the log message to write */
-
-	GString *last_msg;				/**< a copy of the last message we have written, used to coalesce messages */
-	time_t last_msg_ts;				/**< the timestamp of when we have last written a message */
-	guint last_msg_count;			/**< a repeat count to track how many messages we have coalesced */
-	GHashTable *last_loggers;		/**< a list of the loggers we coalesced messages for, in order of appearance */
-} chassis_log_extended_logger_target_t;
 
 /**
  * A logger describes the attributes of a point in the logging hierarchy, such as the effective log level
@@ -109,7 +88,7 @@ typedef struct chassis_log_extended_logger {
 	GLogLevelFlags effective_level;		/**< the effective log level, calculated from min_level and its parent's min_levels */
 	gboolean is_implicit;				/**< this logger hasn't been explicitly set, but is part of a hierarchy chain */
 	gboolean is_autocreated;			/**< this logger has been created in response to a write to a non-existing logger */
-	chassis_log_extended_logger_target_t *target; /**< target for this logger, essentially the fd and write function */
+	chassis_log_backend_t *target; /**< target for this logger, essentially the fd and write function */
 	
 	struct chassis_log_extended_logger *parent;		/**< our parent in the hierarchy, NULL for the root logger */
 	GPtrArray *children;				/**< the list of loggers directly below us in the hierarchy */
@@ -126,7 +105,7 @@ CHASSIS_API void chassis_log_extended_free(chassis_log_extended_t* log_ext);
  * @retval TRUE if the logger was registered
  * @retval FALSE if the registration failed or it already was registered (you should dispose target yourself in this case)
  */
-CHASSIS_API gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_extended_logger_target_t *target);
+CHASSIS_API gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_backend_t *target);
 
 /**
  * Register a logger
@@ -154,51 +133,7 @@ CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_
 CHASSIS_API void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
 
 
-CHASSIS_API chassis_log_extended_logger_target_t* chassis_log_extended_logger_target_new(const gchar *filename);
-CHASSIS_API void chassis_log_extended_logger_target_free(chassis_log_extended_logger_target_t* target);
-CHASSIS_API gboolean chassis_log_extended_logger_target_reopen(chassis_log_extended_logger_target_t* target, GError **gerr);
-/**
- * Unconditionally writes to a target's log file and formats the string to be written.
- * This function also performs message coalescing, local to the target (i.e. coalescing is per-target).
- * 
- * @param target the target to write to
- * @param logger_name name of the logger this message was received for
- * @param level the log level for this message
- * @param message the string to write out - will be subject to formatting
- */
-CHASSIS_API void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t *target, gchar *logger_name, GLogLevelFlags level, const gchar *message);
-
-/**
- * Unconditionally writes to a target's log file, i.e. it doesn't check the effective log level.
- * 
- * @param target the target to write to
- * @param level the log level for this message, used by syslog for example
- * @param message the string to write out
- * @param len the message length
- */
-CHASSIS_API void chassis_log_extended_logger_target_write(chassis_log_extended_logger_target_t* target, GLogLevelFlags level, gchar *message, gsize len);
-CHASSIS_API void chassis_log_extended_logger_target_lock(chassis_log_extended_logger_target_t* target);
-CHASSIS_API void chassis_log_extended_logger_target_unlock(chassis_log_extended_logger_target_t* target);
-/**
- * Opens the target's output.
- * 
- * For output targets that don't need to open anything (e.g. syslog) this is a no-op.
- * @param target the target that should open its output
- * @param error used to convey a lower-level error message back to the caller
- * @return TRUE: the operation was successful, FALSE: the operation failed - check error for details
- */
-CHASSIS_API gboolean chassis_log_extended_logger_target_open(chassis_log_extended_logger_target_t* target, GError **error);
-/**
- * Closes the target's output.
- * 
- * For output targets that don't need to close anything (e.g. syslog) this is a no-op.
- * @param target the target that should close its output
- * @param error used to convey a lower-level error message back to the caller
- * @return TRUE: the operation was successful, FALSE: the operation failed - check error for details
- */
-CHASSIS_API gboolean chassis_log_extended_logger_target_close(chassis_log_extended_logger_target_t* target, GError **error);
-
-CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_extended_logger_target_t *target);
+CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *target);
 CHASSIS_API void chassis_log_extended_logger_free(chassis_log_extended_logger_t* logger);
 /**
  * Conditionally logs a message to a logger's target.

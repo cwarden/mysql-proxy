@@ -63,7 +63,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 	GLogLevelFlags default_log_level;
 	gchar *default_target_name;
 	chassis_log_extended_logger_t *default_logger;
-	chassis_log_extended_logger_target_t *default_target;
+	chassis_log_backend_t *default_target;
 	gboolean ret = FALSE;
 
 	g_assert(log_ext);
@@ -91,10 +91,10 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 
 	/* register all targets we've found */
 	for (i = 0; i < keys_count; i++) {
-		chassis_log_extended_logger_target_t *target;
+		chassis_log_backend_t *target;
 		gchar *target_file = g_key_file_get_string(config, TARGETS_GROUP, keys[i], NULL);
 
-		target = chassis_log_extended_logger_target_new(target_file);
+		target = chassis_log_backend_new(target_file);
 		g_hash_table_insert(targets, keys[i], target);
 		chassis_log_extended_register_target(log_ext, target);
 
@@ -125,7 +125,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 			GLogLevelFlags level;
 			gchar *target_name;
 			chassis_log_extended_logger_t *logger;
-			chassis_log_extended_logger_target_t *target;
+			chassis_log_backend_t *target;
 
 			/* skip the two special groups in the file */
 			if (g_str_equal(TARGETS_GROUP, groups[group_idx]) || g_str_equal(DEFAULT_LOGGER, groups[group_idx])) {

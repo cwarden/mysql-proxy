@@ -31,7 +31,7 @@
 
 /* forward decls */
 static chassis_log_extended_logger_t* chassis_log_extended_get_logger_raw(chassis_log_extended_t *log_ext, const gchar *logger_name);
-static void chassis_log_extended_logger_target_update_timestamp(chassis_log_extended_logger_target_t *target);
+static void chassis_log_backend_update_timestamp(chassis_log_backend_t *target);
 
 /* log_extended functions */
 
@@ -42,7 +42,7 @@ chassis_log_extended_t* chassis_log_extended_new() {
 	 * the individual loggers should _not_ free their target, this is taken care of here as the target might be in use somewhere else
 	 */
 	log_ext->loggers = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_extended_logger_free);
-	log_ext->logger_targets = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_extended_logger_target_free);
+	log_ext->logger_targets = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_backend_free);
 
 	return log_ext;
 }
@@ -56,9 +56,9 @@ void chassis_log_extended_free(chassis_log_extended_t* log_ext) {
 	g_slice_free(chassis_log_extended_t, log_ext);
 }
 
-gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_extended_logger_target_t *target) {
+gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_backend_t *target) {
 	GHashTable *targets = log_ext->logger_targets;
-	chassis_log_extended_logger_target_t *registered_target;
+	chassis_log_backend_t *registered_target;
 	
 	/* check for a valid target */
 	if (!target) return FALSE;
@@ -219,11 +219,11 @@ void chassis_log_extended_reopen(chassis_log_extended_t *log_ext) {
 
 	g_hash_table_iter_init (&iterator, log_ext->logger_targets);
 	while (g_hash_table_iter_next (&iterator, &key, &value)) {
-		chassis_log_extended_logger_target_t *target = (chassis_log_extended_logger_target_t*)value;
+		chassis_log_backend_t *target = (chassis_log_backend_t*)value;
 		const char *target_name = key;
 		GError *gerr = NULL;
 
-		if (FALSE == chassis_log_extended_logger_target_reopen(target, &gerr)) {
+		if (FALSE == chassis_log_backend_reopen(target, &gerr)) {
 			g_critical("%s: reopening logger target '%s' failed: %s",
 					G_STRLOC,
 					target_name,
@@ -240,11 +240,11 @@ void chassis_log_extended_force_log_all(chassis_log_extended_t *log_ext, const g
 	g_assert(log_ext->logger_targets);
 	g_hash_table_iter_init (&iterator, log_ext->logger_targets);
 	while (g_hash_table_iter_next (&iterator, &key, &value)) {
-		chassis_log_extended_logger_target_t *target = (chassis_log_extended_logger_target_t*)value;
+		chassis_log_backend_t *target = (chassis_log_backend_t*)value;
 		(void)key; /* silence unused variable warning */
 
 		/* log level 0 will trigger a "forced" dummy log level */
-		chassis_log_extended_logger_target_log(target, "all", 0, message);
+		chassis_log_backend_log(target, "all", 0, message);
 	}
 }
 
@@ -266,7 +266,7 @@ void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_l
  * @return the effective log level for the logger_name
  */
 static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassis_log_extended_t *log_ext,
-		const gchar *logger_name, chassis_log_extended_logger_target_t **target) {
+		const gchar *logger_name, chassis_log_backend_t **target) {
 	chassis_log_extended_logger_t *logger;
 
 	logger = chassis_log_extended_get_logger_raw(log_ext, logger_name);
@@ -285,7 +285,7 @@ static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassi
 			 */
 			gchar **hierarchy;
 			gsize parts;
-			chassis_log_extended_logger_target_t *parent_target = NULL;
+			chassis_log_backend_t *parent_target = NULL;
 			GLogLevelFlags parent_effective_level;
 
 			hierarchy = chassis_log_extract_hierarchy_names(logger_name, &parts);
@@ -319,8 +319,8 @@ GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_extended_t *
 
 /* logger_target functions */
 
-chassis_log_extended_logger_target_t* chassis_log_extended_logger_target_new(const gchar *filename) {
-	chassis_log_extended_logger_target_t *target = g_slice_new0(chassis_log_extended_logger_target_t);
+chassis_log_backend_t* chassis_log_backend_new(const gchar *filename) {
+	chassis_log_backend_t *target = g_slice_new0(chassis_log_backend_t);
 
 	target->file_path = g_strdup(filename);
 	target->fd = -1;
@@ -329,37 +329,37 @@ chassis_log_extended_logger_target_t* chassis_log_extended_logger_target_new(con
 	target->last_msg = g_string_new(NULL);
 	target->last_msg_ts = 0;
 	target->last_msg_count = 0;
-	target->log_func = chassis_log_extended_logger_target_write;
+	target->log_func = chassis_log_backend_write;
 	/* the value destroy function is NULL, because we treat the hash as a set */
 	target->last_loggers = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
 	return target;
 }
 
-void chassis_log_extended_logger_target_free(chassis_log_extended_logger_target_t* target) {
+void chassis_log_backend_free(chassis_log_backend_t* target) {
 	if (!target) return;
 
-	if (target->fd != -1) chassis_log_extended_logger_target_close(target, NULL);
+	if (target->fd != -1) chassis_log_backend_close(target, NULL);
 	if (target->file_path) g_free(target->file_path);
 	if (target->fd_lock) g_mutex_free(target->fd_lock);
 	if (target->log_str) g_string_free(target->log_str, TRUE);
 	if (target->last_msg) g_string_free(target->last_msg, TRUE);
 	if (target->last_loggers) g_hash_table_unref(target->last_loggers);
 
-	g_slice_free(chassis_log_extended_logger_target_t, target);
+	g_slice_free(chassis_log_backend_t, target);
 }
 
-gboolean chassis_log_extended_logger_target_reopen(chassis_log_extended_logger_target_t* target, GError **gerr) {
+gboolean chassis_log_backend_reopen(chassis_log_backend_t* target, GError **gerr) {
 	gboolean is_ok = TRUE;
 
 	g_return_val_if_fail(NULL != target, TRUE); /* we have no target, log that, but treat it as "success" as didn't fail to reopen the not existing target */
 	
 	g_mutex_lock(target->fd_lock);
-	if (FALSE == chassis_log_extended_logger_target_close(target, gerr)) {
+	if (FALSE == chassis_log_backend_close(target, gerr)) {
 		g_clear_error(gerr); /* if the close fails we may want to log it, but we just failed to close the target logger */
 	}
 
-	if (FALSE == chassis_log_extended_logger_target_open(target, gerr)) {
+	if (FALSE == chassis_log_backend_open(target, gerr)) {
 		is_ok = FALSE;
 	}
 	g_mutex_unlock(target->fd_lock);
@@ -367,7 +367,7 @@ gboolean chassis_log_extended_logger_target_reopen(chassis_log_extended_logger_t
 	return is_ok;
 }
 
-void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t *target, gchar* logger_name, GLogLevelFlags level, const gchar *message) {
+void chassis_log_backend_log(chassis_log_backend_t *target, gchar* logger_name, GLogLevelFlags level, const gchar *message) {
 	gboolean is_duplicate = FALSE;
 	gchar *log_lvl_name = "forced";
 	gchar *logger_name_clean = (logger_name[0] == '\0') ? "global" : logger_name;
@@ -387,7 +387,7 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 		log_lvl_name = "debug"; break;
 	default: break;
 	}
-	chassis_log_extended_logger_target_lock(target);
+	chassis_log_backend_lock(target);
 
 	/* check for a duplicate message
 	 * never consider this to be a duplicate if the log level is 0 (which being used to force a message, e.g. in broadcasting)
@@ -420,14 +420,14 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 				}
 			}
 
-			chassis_log_extended_logger_target_update_timestamp(target);
+			chassis_log_backend_update_timestamp(target);
 			g_string_append_printf(target->log_str, ": [%s] last message repeated %d times\n",
 					logger_names->str,
 					target->last_msg_count);
 			target->log_func(target, level, S(target->log_str));
 			g_string_free(logger_names, TRUE);
 		}
-		chassis_log_extended_logger_target_update_timestamp(target);
+		chassis_log_backend_update_timestamp(target);
 		g_string_append_printf(target->log_str, ": [%s] (%s) %s\n",
 				logger_name_clean,
 				log_lvl_name,
@@ -449,27 +449,27 @@ void chassis_log_extended_logger_target_log(chassis_log_extended_logger_target_t
 		target->last_msg_count++;
 	}
 
-	chassis_log_extended_logger_target_unlock(target);
+	chassis_log_backend_unlock(target);
 }
 
 
-void chassis_log_extended_logger_target_write(chassis_log_extended_logger_target_t* target, GLogLevelFlags level, gchar *message, gsize len) {
+void chassis_log_backend_write(chassis_log_backend_t* target, GLogLevelFlags level, gchar *message, gsize len) {
 	g_assert(target);
 	(void)level; /* unused here, because we have no syslog support yet */
-	if (target->fd == -1) chassis_log_extended_logger_target_open(target, NULL);
+	if (target->fd == -1) chassis_log_backend_open(target, NULL);
 
 	write(target->fd, message, len);
 }
 
-void chassis_log_extended_logger_target_lock(chassis_log_extended_logger_target_t* target) {
+void chassis_log_backend_lock(chassis_log_backend_t* target) {
 	g_mutex_lock(target->fd_lock);
 }
 
-void chassis_log_extended_logger_target_unlock(chassis_log_extended_logger_target_t* target) {
+void chassis_log_backend_unlock(chassis_log_backend_t* target) {
 	g_mutex_unlock(target->fd_lock);
 }
 
-gboolean chassis_log_extended_logger_target_open(chassis_log_extended_logger_target_t* target, GError **error) {
+gboolean chassis_log_backend_open(chassis_log_backend_t* target, GError **error) {
 	g_assert(target);
 	g_assert(target->file_path);
 	g_assert_cmpint(target->fd, ==, -1);
@@ -482,7 +482,7 @@ gboolean chassis_log_extended_logger_target_open(chassis_log_extended_logger_tar
 	return TRUE;
 }
 
-gboolean chassis_log_extended_logger_target_close(chassis_log_extended_logger_target_t* target, GError **error) {
+gboolean chassis_log_backend_close(chassis_log_backend_t* target, GError **error) {
 	g_assert(target);
 	g_assert_cmpint(target->fd, !=, -1);
 
@@ -497,7 +497,7 @@ gboolean chassis_log_extended_logger_target_close(chassis_log_extended_logger_ta
 
 /* logger functions */
 
-chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_extended_logger_target_t *target) {
+chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *target) {
 	chassis_log_extended_logger_t *logger;
 
 	g_return_val_if_fail(logger_name, NULL);
@@ -526,13 +526,13 @@ void chassis_log_extended_logger_log(chassis_log_extended_logger_t* logger, GLog
 	if (logger->effective_level < level) {
 		return;
 	}
-	chassis_log_extended_logger_target_log(logger->target, logger->name, level, message);
+	chassis_log_backend_log(logger->target, logger->name, level, message);
 }
 
 
 /* utility functions */
 
-static void chassis_log_extended_logger_target_update_timestamp(chassis_log_extended_logger_target_t *target) {
+static void chassis_log_backend_update_timestamp(chassis_log_backend_t *target) {
 	struct tm *tm;
 	time_t t;
 	GString *s = target->log_str;
