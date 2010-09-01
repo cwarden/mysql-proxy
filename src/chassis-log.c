@@ -373,7 +373,7 @@ void chassis_log_set_logrotate(chassis_log_t *log) {
 	log->rotate_logs = TRUE;
 }
 
-int chassis_log_set_event_log(chassis_log_t *log, const char *app_name) {
+int chassis_log_set_event_log(chassis_log_t *log, const char G_GNUC_UNUSED *app_name) {
 	g_return_val_if_fail(log != NULL, -1);
 
 #if _WIN32
@@ -385,6 +385,7 @@ int chassis_log_set_event_log(chassis_log_t *log, const char *app_name) {
 
 		g_critical("%s: RegisterEventSource(NULL, %s) failed: %s (%d)",
 				G_STRLOC,
+				app_name,
 				g_strerror(err),
 				err);
 
