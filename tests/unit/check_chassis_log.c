@@ -39,7 +39,7 @@
  * @test Test log message coalescing.
  */
 START_TEST(test_log_compress) {
-	chassis_log *l;
+	chassis_log_t *l;
 	GLogFunc old_log_func;
 
 	l = chassis_log_new();
@@ -63,7 +63,7 @@ START_TEST(test_log_compress) {
  * @test Test log timestamp resolution
  */
 START_TEST(test_log_timestamp) {
-	chassis_log *l;
+	chassis_log_t *l;
 	GLogFunc old_log_func;
 
 	l = chassis_log_new();

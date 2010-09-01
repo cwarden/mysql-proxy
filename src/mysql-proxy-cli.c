@@ -267,7 +267,7 @@ int main_cmdline(int argc, char **argv) {
 	chassis_options_t *opts = NULL;
 
 	GError *gerr = NULL;
-	chassis_log *log = NULL;
+	chassis_log_t *log = NULL;
 
 	/* a little helper macro to set the src-location that we stepped out at to exit */
 #define GOTO_EXIT(status) \

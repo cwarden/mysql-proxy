@@ -82,14 +82,14 @@ const struct {
  * @deprecated will be removed in 1.0
  * @see chassis_log_new()
  */
-chassis_log *chassis_log_init(void) {
+chassis_log_t *chassis_log_init(void) {
 	return chassis_log_new();
 }
 
-chassis_log *chassis_log_new(void) {
-	chassis_log *log;
+chassis_log_t *chassis_log_new(void) {
+	chassis_log_t *log;
 
-	log = g_new0(chassis_log, 1);
+	log = g_new0(chassis_log_t, 1);
 
 	log->log_file_fd = -1;
 	log->log_ts_str = g_string_sized_new(sizeof("2004-01-01T00:00:00.000Z"));
@@ -109,7 +109,7 @@ chassis_log *chassis_log_new(void) {
 	return log;
 }
 
-int chassis_log_set_level(chassis_log *log, const gchar *level) {
+int chassis_log_set_level(chassis_log_t *log, const gchar *level) {
 	gint i;
 
 	for (i = 0; log_lvl_map[i].name; i++) {
@@ -133,7 +133,7 @@ int chassis_log_set_level(chassis_log *log, const gchar *level) {
  *
  * @return TRUE on success, FALSE on error
  */
-int chassis_log_open(chassis_log *log) {
+int chassis_log_open(chassis_log_t *log) {
 	if (!log->log_filename) return TRUE;
 
 	log->log_file_fd = open(log->log_filename, O_RDWR | O_CREAT | O_APPEND, 0660);
@@ -148,7 +148,7 @@ int chassis_log_open(chassis_log *log) {
  *
  * @see chassis_log_open
  */
-int chassis_log_close(chassis_log *log) {
+int chassis_log_close(chassis_log_t *log) {
 	if (log->log_file_fd == -1) return 0;
 
 	close(log->log_file_fd);
@@ -158,7 +158,7 @@ int chassis_log_close(chassis_log *log) {
 	return 0;
 }
 
-void chassis_log_free(chassis_log *log) {
+void chassis_log_free(chassis_log_t *log) {
 	if (!log) return;
 
 	chassis_log_close(log);
@@ -181,7 +181,7 @@ void chassis_log_free(chassis_log *log) {
 	g_free(log);
 }
 
-static int chassis_log_update_timestamp(chassis_log *log) {
+static int chassis_log_update_timestamp(chassis_log_t *log) {
 	struct tm *tm;
 	GTimeVal tv;
 	time_t	t;
@@ -198,7 +198,7 @@ static int chassis_log_update_timestamp(chassis_log *log) {
 	return 0;
 }
 
-void chassis_set_logtimestamp_resolution(chassis_log *log, int res) {
+void chassis_set_logtimestamp_resolution(chassis_log_t *log, int res) {
 	if (log == NULL)
 		return;
 	/* only set resolution to valid values, ignore otherwise */
@@ -206,14 +206,14 @@ void chassis_set_logtimestamp_resolution(chassis_log *log, int res) {
 		log->log_ts_resolution = res;
 }
 
-int chassis_get_logtimestamp_resolution(chassis_log *log) {
+int chassis_get_logtimestamp_resolution(chassis_log_t *log) {
 	if (log == NULL)
 		return -1;
 	return log->log_ts_resolution;
 }
 
 
-static int chassis_log_write(chassis_log *log, int log_level, GString *str) {
+static int chassis_log_write(chassis_log_t *log, int log_level, GString *str) {
 	if (-1 != log->log_file_fd) {
 		/* prepend a timestamp */
 		if (-1 == write(log->log_file_fd, S(str))) {
@@ -284,7 +284,7 @@ const char *chassis_log_skip_topsrcdir(const char *message) {
 }
 
 void chassis_log_func(const gchar *UNUSED_PARAM(log_domain), GLogLevelFlags log_level, const gchar *message, gpointer user_data) {
-	chassis_log *log = user_data;
+	chassis_log_t *log = user_data;
 	int i;
 	gchar *log_lvl_name = "(error)";
 	gboolean is_duplicate = FALSE;
@@ -369,11 +369,11 @@ void chassis_log_func(const gchar *UNUSED_PARAM(log_domain), GLogLevelFlags log_
 	g_static_mutex_unlock(&log_mutex);
 }
 
-void chassis_log_set_logrotate(chassis_log *log) {
+void chassis_log_set_logrotate(chassis_log_t *log) {
 	log->rotate_logs = TRUE;
 }
 
-int chassis_log_set_event_log(chassis_log *log, const char *app_name) {
+int chassis_log_set_event_log(chassis_log_t *log, const char *app_name) {
 	g_return_val_if_fail(log != NULL, -1);
 
 #if _WIN32

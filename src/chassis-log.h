@@ -117,17 +117,17 @@ typedef struct {
 typedef chassis_log_t chassis_log G_GNUC_DEPRECATED;
 typedef chassis_log_t chassis_log_extended_t G_GNUC_DEPRECATED;
 
-CHASSIS_API chassis_log *chassis_log_init(void) G_GNUC_DEPRECATED;
-CHASSIS_API chassis_log *chassis_log_new(void);
-CHASSIS_API int chassis_log_set_level(chassis_log *log, const gchar *level);
-CHASSIS_API void chassis_log_free(chassis_log *log);
-CHASSIS_API int chassis_log_open(chassis_log *log);
+CHASSIS_API chassis_log_t *chassis_log_init(void) G_GNUC_DEPRECATED;
+CHASSIS_API chassis_log_t *chassis_log_new(void);
+CHASSIS_API int chassis_log_set_level(chassis_log_t *log, const gchar *level);
+CHASSIS_API void chassis_log_free(chassis_log_t *log);
+CHASSIS_API int chassis_log_open(chassis_log_t *log);
 CHASSIS_API void chassis_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
-CHASSIS_API void chassis_log_set_logrotate(chassis_log *log);
-CHASSIS_API int chassis_log_set_event_log(chassis_log *log, const char *app_name);
+CHASSIS_API void chassis_log_set_logrotate(chassis_log_t *log);
+CHASSIS_API int chassis_log_set_event_log(chassis_log_t *log, const char *app_name);
 CHASSIS_API const char *chassis_log_skip_topsrcdir(const char *message);
-CHASSIS_API void chassis_set_logtimestamp_resolution(chassis_log *log, int res);
-CHASSIS_API int chassis_get_logtimestamp_resolution(chassis_log *log);
+CHASSIS_API void chassis_set_logtimestamp_resolution(chassis_log_t *log, int res);
+CHASSIS_API int chassis_get_logtimestamp_resolution(chassis_log_t *log);
 
 /**
  * Registers a logger backend so it can be used with individual loggers.

@@ -1122,7 +1122,7 @@ int main(int argc, char **argv) {
 	gchar *myd_filename = NULL;
 
 	GKeyFile *keyfile = NULL;
-	chassis_log *log;
+	chassis_log_t *log;
 
 	/* can't appear in the configfile */
 	GOptionEntry base_main_entries[] = 

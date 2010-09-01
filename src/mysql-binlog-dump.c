@@ -959,7 +959,7 @@ int main(int argc, char **argv) {
 	gchar *binlog_filename = NULL;
 
 	GKeyFile *keyfile = NULL;
-	chassis_log *log;
+	chassis_log_t *log;
 	gint binlog_start_pos = 0;
 	gboolean binlog_find_start_pos = FALSE;
 
