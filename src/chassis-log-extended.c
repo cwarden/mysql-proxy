@@ -30,7 +30,7 @@
 #include "string-len.h"
 
 /* forward decls */
-static chassis_log_extended_logger_t* chassis_log_extended_get_logger_raw(chassis_log_extended_t *log_ext, const gchar *logger_name);
+static chassis_log_domain_t* chassis_log_extended_get_logger_raw(chassis_log_extended_t *log_ext, const gchar *logger_name);
 static void chassis_log_backend_update_timestamp(chassis_log_backend_t *target);
 
 /* log_extended functions */
@@ -41,8 +41,8 @@ chassis_log_extended_t* chassis_log_extended_new() {
 	/* don't free the keys, they are part of the value for both hashes
 	 * the individual loggers should _not_ free their target, this is taken care of here as the target might be in use somewhere else
 	 */
-	log_ext->loggers = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_extended_logger_free);
-	log_ext->logger_targets = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_backend_free);
+	log_ext->domains = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_domain_free);
+	log_ext->backends = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify)chassis_log_backend_free);
 
 	return log_ext;
 }
@@ -50,14 +50,14 @@ chassis_log_extended_t* chassis_log_extended_new() {
 void chassis_log_extended_free(chassis_log_extended_t* log_ext) {
 	if (!log_ext) return;
 
-	if (log_ext->loggers) g_hash_table_destroy(log_ext->loggers);
-	if (log_ext->logger_targets) g_hash_table_destroy(log_ext->logger_targets);
+	if (log_ext->domains) g_hash_table_destroy(log_ext->domains);
+	if (log_ext->backends) g_hash_table_destroy(log_ext->backends);
 
 	g_slice_free(chassis_log_extended_t, log_ext);
 }
 
-gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_backend_t *target) {
-	GHashTable *targets = log_ext->logger_targets;
+gboolean chassis_log_extended_register_backend(chassis_log_extended_t *log_ext, chassis_log_backend_t *target) {
+	GHashTable *targets = log_ext->backends;
 	chassis_log_backend_t *registered_target;
 	
 	/* check for a valid target */
@@ -74,28 +74,28 @@ gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, c
 	return TRUE;
 }
 
-static void chassis_log_extended_logger_invalidate_hierarchy(gpointer data, gpointer G_GNUC_UNUSED user_data) {
-	chassis_log_extended_logger_t *logger = (chassis_log_extended_logger_t*)data;
+static void chassis_log_domain_invalidate_hierarchy(gpointer data, gpointer G_GNUC_UNUSED user_data) {
+	chassis_log_domain_t *logger = (chassis_log_domain_t*)data;
 	
 	/* don't touch explicit loggers - stop condition for the recursion */
 	if (logger->is_implicit == FALSE) return;
 	
 	/* otherwise reset the target and effective level for this logger and recurse into the children */
 	logger->effective_level = 0;
-	logger->target = NULL;
+	logger->backend = NULL;
 
-	g_ptr_array_foreach(logger->children, chassis_log_extended_logger_invalidate_hierarchy, NULL);
+	g_ptr_array_foreach(logger->children, chassis_log_domain_invalidate_hierarchy, NULL);
 }
 
-gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger) {
+gboolean chassis_log_extended_register_domain(chassis_log_extended_t *log_ext, chassis_log_domain_t *logger) {
 	GHashTable *loggers;
-	chassis_log_extended_logger_t *existing_logger = NULL;
+	chassis_log_domain_t *existing_logger = NULL;
 
 	if (NULL == log_ext) return FALSE;
 	if (NULL == logger) return FALSE;
 	if (NULL == logger->name) return FALSE;
 
-	loggers = log_ext->loggers;
+	loggers = log_ext->domains;
 
 	/* if we already have a logger registered, implicit or explicit, we need to update it to reflect the new values (target, level)
 	 * the newly registered logger is always marked as being explicit
@@ -121,16 +121,16 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 		/* invalidate the effective level, this will be calculated upon the first lookup */
 		existing_logger->effective_level = 0;
 
-		/* TODO check for logger->target being a valid and registered target! */
-		existing_logger->target = logger->target;
+		/* TODO check for logger->backend being a valid and registered target! */
+		existing_logger->backend = logger->backend;
 		existing_logger->is_autocreated = FALSE;
 
 		/* invalidate the hierarchy below this logger, up until each explicit logger encountered */
-		g_ptr_array_foreach(existing_logger->children, chassis_log_extended_logger_invalidate_hierarchy, NULL);
+		g_ptr_array_foreach(existing_logger->children, chassis_log_domain_invalidate_hierarchy, NULL);
 
 	} else {
-		chassis_log_extended_logger_t *implicit = NULL;
-		chassis_log_extended_logger_t *previous = NULL;
+		chassis_log_domain_t *implicit = NULL;
+		chassis_log_domain_t *previous = NULL;
 		gsize levels;
 		gint i; /* do _not_ make this unsigned! that would break the if below */
 		gchar **name_parts = NULL;
@@ -142,7 +142,7 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 
 		/* walk the name parts in reverse but leave out the last element (levels-1) - we have just inserted that one */
 		for (i = levels-2; i >= 0; i--) {
-			chassis_log_extended_logger_t *parent = NULL;
+			chassis_log_domain_t *parent = NULL;
 
 			/* stop inserting on the first logger that's already present, irrespective of whether it's implicit or explicit.
 			 * otherwise we would overwrite previously registered loggers (such as the root logger)
@@ -161,7 +161,7 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 			}
 
 			/* implicit loggers have practically no information yet, only a name and that they are implicit */
-			implicit = chassis_log_extended_logger_new(name_parts[i], 0, NULL);
+			implicit = chassis_log_domain_new(name_parts[i], 0, NULL);
 			implicit->is_implicit = TRUE;
 			implicit->is_autocreated = logger->is_autocreated;
 
@@ -179,29 +179,29 @@ gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, c
 	return TRUE;
 }
 
-void chassis_log_extended_unregister_logger(chassis_log_extended_t G_GNUC_UNUSED *log_ext, chassis_log_extended_logger_t G_GNUC_UNUSED *logger) {
+void chassis_log_extended_unregister_domain(chassis_log_extended_t G_GNUC_UNUSED *log_ext, chassis_log_domain_t G_GNUC_UNUSED *logger) {
 	/* TODO: currently unimplemented */
 	g_assert_not_reached();
 }
 
-static chassis_log_extended_logger_t* chassis_log_extended_get_logger_raw(chassis_log_extended_t *log_ext, const gchar *logger_name) {
+static chassis_log_domain_t* chassis_log_extended_get_logger_raw(chassis_log_extended_t *log_ext, const gchar *logger_name) {
 	if (!log_ext) return NULL;
 	if (!logger_name) return NULL;
 
-	return g_hash_table_lookup(log_ext->loggers, logger_name);
+	return g_hash_table_lookup(log_ext->domains, logger_name);
 }
 
-chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name) {
-	chassis_log_extended_logger_t *logger = chassis_log_extended_get_logger_raw(log_ext, logger_name);
+chassis_log_domain_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name) {
+	chassis_log_domain_t *logger = chassis_log_extended_get_logger_raw(log_ext, logger_name);
 
 	/* if this logger doesn't exist, create an implicit one.
 	 * this should only happen when a log_domain is being passed in for a logger we have no explicit logger registered for.
 	 */
 	if (NULL == logger) {
-		logger = chassis_log_extended_logger_new(logger_name, 0, NULL);
+		logger = chassis_log_domain_new(logger_name, 0, NULL);
 		logger->is_implicit = TRUE;
 		logger->is_autocreated = TRUE;
-		chassis_log_extended_register_logger(log_ext, logger);
+		chassis_log_extended_register_domain(log_ext, logger);
 	}
 
 	/* if this logger doesn't have its effective level set up yet, trigger a resolution */
@@ -215,9 +215,9 @@ void chassis_log_extended_reopen(chassis_log_extended_t *log_ext) {
 	GHashTableIter iterator;
 	gpointer key, value;
 
-	g_assert(log_ext->logger_targets);
+	g_assert(log_ext->backends);
 
-	g_hash_table_iter_init (&iterator, log_ext->logger_targets);
+	g_hash_table_iter_init (&iterator, log_ext->backends);
 	while (g_hash_table_iter_next (&iterator, &key, &value)) {
 		chassis_log_backend_t *target = (chassis_log_backend_t*)value;
 		const char *target_name = key;
@@ -237,8 +237,8 @@ void chassis_log_extended_force_log_all(chassis_log_extended_t *log_ext, const g
 	GHashTableIter iterator;
 	gpointer key, value;
 
-	g_assert(log_ext->logger_targets);
-	g_hash_table_iter_init (&iterator, log_ext->logger_targets);
+	g_assert(log_ext->backends);
+	g_hash_table_iter_init (&iterator, log_ext->backends);
 	while (g_hash_table_iter_next (&iterator, &key, &value)) {
 		chassis_log_backend_t *target = (chassis_log_backend_t*)value;
 		(void)key; /* silence unused variable warning */
@@ -250,12 +250,12 @@ void chassis_log_extended_force_log_all(chassis_log_extended_t *log_ext, const g
 
 void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data) {
 	chassis_log_extended_t *log_ext = (chassis_log_extended_t *)user_data;
-	chassis_log_extended_logger_t *logger;
+	chassis_log_domain_t *logger;
 
 	/* revert to our root logger if we don't have a log_domain set */
 	logger = chassis_log_extended_get_logger(log_ext, NULL == log_domain ? "" : log_domain);
 
-	chassis_log_extended_logger_log(logger, log_level, message);
+	chassis_log_domain_log(logger, log_level, message);
 }
 
 /**
@@ -267,7 +267,7 @@ void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_l
  */
 static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassis_log_extended_t *log_ext,
 		const gchar *logger_name, chassis_log_backend_t **target) {
-	chassis_log_extended_logger_t *logger;
+	chassis_log_domain_t *logger;
 
 	logger = chassis_log_extended_get_logger_raw(log_ext, logger_name);
 	if (!logger) return 0;
@@ -295,7 +295,7 @@ static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassi
 
 				parent_effective_level = chassis_log_extended_get_effective_level_and_target(log_ext, hierarchy[parts - 2], &parent_target);
 				logger->effective_level = parent_effective_level;
-				logger->target = parent_target;
+				logger->backend = parent_target;
 
 				g_strfreev(hierarchy);
 			}
@@ -307,7 +307,7 @@ static GLogLevelFlags chassis_log_extended_get_effective_level_and_target(chassi
 
 	/* if requested, also return our target */
 	if (target) {
-		*target = logger->target;
+		*target = logger->backend;
 	}
 
 	return logger->effective_level;
@@ -497,16 +497,16 @@ gboolean chassis_log_backend_close(chassis_log_backend_t* target, GError **error
 
 /* logger functions */
 
-chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *target) {
-	chassis_log_extended_logger_t *logger;
+chassis_log_domain_t* chassis_log_domain_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *target) {
+	chassis_log_domain_t *logger;
 
 	g_return_val_if_fail(logger_name, NULL);
 
-	logger = g_slice_new0(chassis_log_extended_logger_t);
+	logger = g_slice_new0(chassis_log_domain_t);
 
 	logger->name = g_strdup(logger_name);
 	logger->min_level = min_level;
-	logger->target = target;
+	logger->backend = target;
 	logger->is_autocreated = FALSE;
 	logger->parent = NULL;
 	logger->children = g_ptr_array_new();
@@ -514,19 +514,19 @@ chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logg
 	return logger;
 }
 
-void chassis_log_extended_logger_free(chassis_log_extended_logger_t* logger) {
+void chassis_log_domain_free(chassis_log_domain_t* logger) {
 	if (logger == NULL) return;
 	if (logger->name) g_free(logger->name);
 	if (logger->children) g_ptr_array_free(logger->children, TRUE);
 
-	g_slice_free(chassis_log_extended_logger_t, logger);
+	g_slice_free(chassis_log_domain_t, logger);
 }
 
-void chassis_log_extended_logger_log(chassis_log_extended_logger_t* logger, GLogLevelFlags level, const gchar *message) {
+void chassis_log_domain_log(chassis_log_domain_t* logger, GLogLevelFlags level, const gchar *message) {
 	if (logger->effective_level < level) {
 		return;
 	}
-	chassis_log_backend_log(logger->target, logger->name, level, message);
+	chassis_log_backend_log(logger->backend, logger->name, level, message);
 }
 
 

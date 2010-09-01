@@ -52,10 +52,10 @@
  * A log domain named \c "chassis.network.backend" is the child of \c "chassis.network" and so on.@n
  * If \c "chassis.network" has, via a configuration file, been assigned the log level \c MESSAGE, then \c "chassis.network.backend" would
  * inherit this log level (assuming there was no explicit configuration for it, too).@n
- * The same is true for the logger's target - most likely a file name to write to.
+ * The same is true for the logger's backend - most likely a file name to write to.
  * 
  * There always is a "root logger" with the name of \c "" (empty string). If no other logger is configured, every other logger will inherit its
- * settings (effective log level and target).
+ * settings (effective log level and backend).
  * 
  * @section development Future development
  * 
@@ -64,6 +64,7 @@
  * single function, namely chassis_log_extended_log_func().
  */
 
+#include "chassis_log_domain.h" /* the log-domains like 'chassis.network' */
 #include "chassis_log_backend.h" /* the backends like syslog, file, stderr, ... */
 
 /**
@@ -73,49 +74,33 @@
  * @note This is currently not threadsafe when manipulating the available loggers!
  */
 typedef struct chassis_log_extended {
-	GHashTable *loggers;			/**< <gchar*, chassis_log_extended_logger_t*> a map of all available loggers, keyed by logger name */
-	GHashTable *logger_targets;		/**< <gchar*, chassis_log_backend_t*> a map of all available logger_targets, keyed by file name */
+	GHashTable *domains;			/**< <gchar*, chassis_log_domain_t*> a map of all available domains, keyed by logger name */
+	GHashTable *backends;			/**< <gchar*, chassis_log_backend_t*> a map of all available backends, keyed by file name */
 } chassis_log_extended_t;
 
-
-/**
- * A logger describes the attributes of a point in the logging hierarchy, such as the effective log level
- * and the target the messages go to.
- */
-typedef struct chassis_log_extended_logger {
-	gchar *name;						/**< the full name of this logger */
-	GLogLevelFlags min_level;			/**< the minimum log level for this logger */
-	GLogLevelFlags effective_level;		/**< the effective log level, calculated from min_level and its parent's min_levels */
-	gboolean is_implicit;				/**< this logger hasn't been explicitly set, but is part of a hierarchy chain */
-	gboolean is_autocreated;			/**< this logger has been created in response to a write to a non-existing logger */
-	chassis_log_backend_t *target; /**< target for this logger, essentially the fd and write function */
-	
-	struct chassis_log_extended_logger *parent;		/**< our parent in the hierarchy, NULL for the root logger */
-	GPtrArray *children;				/**< the list of loggers directly below us in the hierarchy */
-} chassis_log_extended_logger_t;
 
 
 CHASSIS_API chassis_log_extended_t* chassis_log_extended_new();
 CHASSIS_API void chassis_log_extended_free(chassis_log_extended_t* log_ext);
 /**
- * Registers a logger target so it can be used with individual loggers.
+ * Registers a logger backend so it can be used with individual loggers.
  * 
  * @param log_ext the extended log structure
- * @param target the target to be added
+ * @param backend the backend to be added
  * @retval TRUE if the logger was registered
- * @retval FALSE if the registration failed or it already was registered (you should dispose target yourself in this case)
+ * @retval FALSE if the registration failed or it already was registered (you should dispose backend yourself in this case)
  */
-CHASSIS_API gboolean chassis_log_extended_register_target(chassis_log_extended_t *log_ext, chassis_log_backend_t *target);
+CHASSIS_API gboolean chassis_log_extended_register_backend(chassis_log_extended_t *log_ext, chassis_log_backend_t *backend);
 
 /**
  * Register a logger
  *
  * @retval TRUE on success
- * @retval FALSE if the registration failed or it already was registered (you should dispose target yourself in this case)
+ * @retval FALSE if the registration failed or it already was registered (you should dispose backend yourself in this case)
  */
-CHASSIS_API gboolean chassis_log_extended_register_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
-CHASSIS_API void chassis_log_extended_unregister_logger(chassis_log_extended_t *log_ext, chassis_log_extended_logger_t *logger);
-CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name);
+CHASSIS_API gboolean chassis_log_extended_register_domain(chassis_log_extended_t *log_ext, chassis_log_domain_t *logger);
+CHASSIS_API void chassis_log_extended_unregister_domain(chassis_log_extended_t *log_ext, chassis_log_domain_t *logger);
+CHASSIS_API chassis_log_domain_t* chassis_log_extended_get_logger(chassis_log_extended_t *log_ext, const gchar *logger_name);
 CHASSIS_API void chassis_log_extended_reopen(chassis_log_extended_t* log_ext);
 CHASSIS_API void chassis_log_extended_force_log_all(chassis_log_extended_t* log_ext, const gchar *message);
 CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_extended_t *log_ext, const gchar *logger_name);
@@ -124,28 +109,13 @@ CHASSIS_API GLogLevelFlags chassis_log_extended_get_effective_level(chassis_log_
  * Interface to glib2's logging system.
  * 
  * chassis_log_extended_log_func looks up the corresponding logger from the log_domain and passes control on.
- * The logger will determine whether or not to actually log the message and ask its logger_target to write the message.
+ * The logger will determine whether or not to actually log the message and ask its backend to write the message.
  * @param log_domain the name of the logger this message belongs to.
  * @param log_level the log_level this message is on
  * @param message the pre-formatted message to log
  * @param user_data a pointer to chassis_log
  */
 CHASSIS_API void chassis_log_extended_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
-
-
-CHASSIS_API chassis_log_extended_logger_t* chassis_log_extended_logger_new(const gchar *logger_name, GLogLevelFlags min_level, chassis_log_backend_t *target);
-CHASSIS_API void chassis_log_extended_logger_free(chassis_log_extended_logger_t* logger);
-/**
- * Conditionally logs a message to a logger's target.
- * 
- * This function performs the checking of the effective log level against the message's log level.
- * It does not modify the message in any way.
- * 
- * @param logger the logger to validate the level against
- * @param level the log level of the message
- * @param message the string to log
- */
-CHASSIS_API void chassis_log_extended_logger_log(chassis_log_extended_logger_t* logger, GLogLevelFlags level, const gchar *message);
 
 /* utility functions */
 /**

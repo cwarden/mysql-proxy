@@ -62,7 +62,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 	gchar *default_log_level_str;
 	GLogLevelFlags default_log_level;
 	gchar *default_target_name;
-	chassis_log_extended_logger_t *default_logger;
+	chassis_log_domain_t *default_logger;
 	chassis_log_backend_t *default_target;
 	gboolean ret = FALSE;
 
@@ -96,7 +96,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 
 		target = chassis_log_backend_new(target_file);
 		g_hash_table_insert(targets, keys[i], target);
-		chassis_log_extended_register_target(log_ext, target);
+		chassis_log_extended_register_backend(log_ext, target);
 
 		g_free(target_file);
 	}
@@ -109,8 +109,8 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 	}
 	default_target_name = g_key_file_get_string(config, DEFAULT_LOGGER, TARGET_KEY, NULL);
 	default_target = g_hash_table_lookup(targets, default_target_name);
-	default_logger = chassis_log_extended_logger_new("", default_log_level, default_target);
-	chassis_log_extended_register_logger(log_ext, default_logger);
+	default_logger = chassis_log_domain_new("", default_log_level, default_target);
+	chassis_log_extended_register_domain(log_ext, default_logger);
 
 	g_free(default_log_level_str);
 
@@ -124,7 +124,7 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 			gchar *level_str;
 			GLogLevelFlags level;
 			gchar *target_name;
-			chassis_log_extended_logger_t *logger;
+			chassis_log_domain_t *logger;
 			chassis_log_backend_t *target;
 
 			/* skip the two special groups in the file */
@@ -145,8 +145,8 @@ gboolean chassis_log_load_config(chassis_log_extended_t *log_ext, const gchar *f
 					/* FIXME: complain about using unknown target, don't just fall back to the root target */
 					target = default_target;
 				}
-				logger = chassis_log_extended_logger_new(logger_name, level, target);
-				chassis_log_extended_register_logger(log_ext, logger);
+				logger = chassis_log_domain_new(logger_name, level, target);
+				chassis_log_extended_register_domain(log_ext, logger);
 			}
 
 			if (level_str) g_free(level_str);
