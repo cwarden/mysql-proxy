@@ -691,7 +691,6 @@ START_TEST(coalescing_logger_names) {
 	chassis_log_t *log_ext = chassis_log_new();
 	gchar *log_file_root =  create_tmp_file_name();
 	gchar *log_file_contents;
-	gchar *broadcast_first, *broadcast_last;
 	chassis_log_domain_t *root, *aa, *ab;
 	chassis_log_backend_t *target_root;
 
