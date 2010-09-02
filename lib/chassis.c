@@ -226,7 +226,7 @@ static int lua_chassis_log(lua_State *L) {
             }
         }
 	}
-    g_log(G_LOG_DOMAIN, log_levels[option], "(%s:%d) %s", (source ? source : first_source),
+    g_log("lua", log_levels[option], "(%s:%d) %s", (source ? source : first_source),
 			(source ? currentline : first_line), log_message);
 	
 	return 0;
