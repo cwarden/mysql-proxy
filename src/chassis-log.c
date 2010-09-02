@@ -93,7 +93,7 @@ chassis_log_t *chassis_log_new(void) {
 
 	log->log_file_fd = -1;
 	log->log_ts_str = g_string_sized_new(sizeof("2004-01-01T00:00:00.000Z"));
-	log->log_ts_resolution = CHASSIS_RESOLUTION_DEFAULT;
+	log->log_ts_resolution = CHASSIS_LOG_RESOLUTION_DEFAULT;
 	log->min_lvl = G_LOG_LEVEL_CRITICAL;
 
 	log->last_msg = g_string_new(NULL);
@@ -192,23 +192,24 @@ static int chassis_log_update_timestamp(chassis_log_t *log) {
 	tm = localtime(&t);
 	
 	s->len = strftime(s->str, s->allocated_len, "%Y-%m-%d %H:%M:%S", tm);
-	if (log->log_ts_resolution == CHASSIS_RESOLUTION_MS)
+	if (log->log_ts_resolution == CHASSIS_LOG_RESOLUTION_MS) {
 		g_string_append_printf(s, ".%.3d", (int) tv.tv_usec/1000);
+	}
 	
 	return 0;
 }
 
-void chassis_set_logtimestamp_resolution(chassis_log_t *log, int res) {
-	if (log == NULL)
-		return;
-	/* only set resolution to valid values, ignore otherwise */
-	if (res == CHASSIS_RESOLUTION_SEC || res == CHASSIS_RESOLUTION_MS)
-		log->log_ts_resolution = res;
+int chassis_log_set_timestamp_resolution(chassis_log_t *log, chassis_log_resolution_t res) {
+	g_return_val_if_fail(NULL != log, -1);
+
+	log->log_ts_resolution = res;
+
+	return 0;
 }
 
-int chassis_get_logtimestamp_resolution(chassis_log_t *log) {
-	if (log == NULL)
-		return -1;
+chassis_log_resolution_t chassis_log_get_timestamp_resolution(chassis_log_t *log) {
+	g_return_val_if_fail(NULL != log, CHASSIS_LOG_RESOLUTION_DEFAULT);
+
 	return log->log_ts_resolution;
 }
 

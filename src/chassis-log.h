@@ -29,10 +29,12 @@
 
 #include "chassis-exports.h"
 
-#define CHASSIS_RESOLUTION_SEC	0x0
-#define CHASSIS_RESOLUTION_MS	0x1
+typedef enum {
+	CHASSIS_LOG_RESOLUTION_SEC,
+	CHASSIS_LOG_RESOLUTION_MS
+} chassis_log_resolution_t;
 
-#define CHASSIS_RESOLUTION_DEFAULT	CHASSIS_RESOLUTION_SEC
+#define CHASSIS_LOG_RESOLUTION_DEFAULT	CHASSIS_LOG_RESOLUTION_SEC
 
 /**
  * @defgroup logging Hierarchical Logging
@@ -103,7 +105,7 @@ typedef struct {
 	gboolean rotate_logs;
 
 	GString *log_ts_str;
-	gint	 log_ts_resolution;	/*<< timestamp resolution (sec, ms) */
+	chassis_log_resolution_t log_ts_resolution;	/*<< timestamp resolution (sec, ms) */
 
 	GString *last_msg;
 	time_t   last_msg_ts;
@@ -125,8 +127,8 @@ CHASSIS_API void chassis_log_func(const gchar *log_domain, GLogLevelFlags log_le
 CHASSIS_API void chassis_log_set_logrotate(chassis_log_t *log);
 CHASSIS_API int chassis_log_set_event_log(chassis_log_t *log, const char *app_name);
 CHASSIS_API const char *chassis_log_skip_topsrcdir(const char *message);
-CHASSIS_API void chassis_set_logtimestamp_resolution(chassis_log_t *log, int res);
-CHASSIS_API int chassis_get_logtimestamp_resolution(chassis_log_t *log);
+CHASSIS_API int chassis_log_set_timestamp_resolution(chassis_log_t *log, chassis_log_resolution_t res);
+CHASSIS_API chassis_log_resolution_t chassis_log_get_timestamp_resolution(chassis_log_t *log);
 
 /**
  * Registers a logger backend so it can be used with individual loggers.
