@@ -98,25 +98,6 @@ int chassis_log_backend_syslog_init(chassis_log_backend_t *backend) {
 
 #ifdef _WIN32
 
-/**
- * the mapping of our internal log levels to various log systems
- */
-const struct {
-	char *name;
-	GLogLevelFlags lvl;
-} log_lvl_map[] = {	/* syslog levels are different to the glib ones */
-	{ "error", G_LOG_LEVEL_ERROR },
-	{ "critical", G_LOG_LEVEL_CRITICAL },
-	{ "warning", G_LOG_LEVEL_WARNING },
-	{ "message", G_LOG_LEVEL_MESSAGE },
-	{ "info", G_LOG_LEVEL_INFO },
-	{ "debug", G_LOG_LEVEL_DEBUG },
-
-	{ NULL, 0 }
-};
-
-
-
 void chassis_log_backend_eventlog_log(chassis_log_backend_t* backend, GLogLevelFlags level, const gchar *message, gsize len) {
 	char *log_messages[1];
 	int win_evtype;
