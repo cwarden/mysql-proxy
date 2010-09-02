@@ -4,33 +4,70 @@
 #include <glib.h>
 #include <time.h> /* for time_t */
 
+#ifndef _WIN32
+#include <unistd.h> /* pid_t, gid_t */
+#endif
+
 #include "chassis-exports.h"
+
+typedef enum {
+	CHASSIS_LOG_BACKEND_RESOLUTION_SEC,
+	CHASSIS_LOG_BACKEND_RESOLUTION_MS
+} chassis_log_backend_resolution_t;
+
+#define CHASSIS_LOG_BACKEND_RESOLUTION_DEFAULT	CHASSIS_LOG_BACKEND_RESOLUTION_SEC
+
+#define CHASSIS_LOG_LEVEL_BROADCAST (1 << G_LOG_LEVEL_USER_SHIFT)
 
 /* forward decl, so we can use it in the function ptr */
 typedef struct chassis_log_backend chassis_log_backend_t;
 
-typedef void (*chassis_log_backend_write_func_t)(chassis_log_backend_t *target, GLogLevelFlags level, gchar *message, gsize len);
+typedef void (*chassis_log_backend_write_func_t)(chassis_log_backend_t *backend, GLogLevelFlags level, const gchar *message, gsize len);
+typedef gboolean (*chassis_log_backend_open_func_t)(chassis_log_backend_t *backend, GError **gerr);
+typedef gboolean (*chassis_log_backend_close_func_t)(chassis_log_backend_t *backend, GError **gerr);
+#ifndef _WIN32
+typedef gboolean (*chassis_log_backend_chown_func_t)(chassis_log_backend_t *backend, uid_t uid, gid_t gid, GError **gerr);
+#endif
 
 /**
- * A logger target encapsulates the ultimate target of a log message and its writing.
+ * A logger backend encapsulates the ultimate backend of a log message and its writing.
  * 
  * Currently it supports file-based logs or anything that doesn't need extra information, like syslog.
  */
 struct chassis_log_backend {
+	chassis_log_backend_write_func_t log_func;	/**< function that actually writes the message */
+	chassis_log_backend_open_func_t open_func;	/**< function that opens the backend */
+	chassis_log_backend_close_func_t close_func;	/**< function that closes the backend */
+#ifndef _WIN32
+	chassis_log_backend_chown_func_t chown_func;	/**< function that chown()s the backend */
+#endif
+	gboolean supports_reopen;
+	gboolean needs_timestamp;
+	gboolean needs_compress;
+	chassis_log_backend_resolution_t log_ts_resolution;	/*<< timestamp resolution (sec, ms) */
+
+	gchar *name;
+
+	/* file backend specific */
 	gchar *file_path;				/**< absolute path to the log file */
-	gint fd;						/**< file descriptor for this log file */
+	gint fd;					/**< file descriptor for this log file */
+
+#ifdef _WIN32
+	/* eventlog specific */
+	HANDLE event_source_handle;
+#endif
+
 	GMutex *fd_lock;				/**< lock to serialize log message writing */
-	chassis_log_backend_write_func_t log_func;	/**< pointer to the function that actually writes the message */
 
 	GString *log_str;				/**< a reusable string for the log message to write */
 
 	GString *last_msg;				/**< a copy of the last message we have written, used to coalesce messages */
 	time_t last_msg_ts;				/**< the timestamp of when we have last written a message */
-	guint last_msg_count;			/**< a repeat count to track how many messages we have coalesced */
-	GHashTable *last_loggers;		/**< a list of the loggers we coalesced messages for, in order of appearance */
+	guint last_msg_count;				/**< a repeat count to track how many messages we have coalesced */
+	GHashTable *last_loggers;			/**< a list of the loggers we coalesced messages for, in order of appearance */
 };
 
-CHASSIS_API chassis_log_backend_t* chassis_log_backend_new(const gchar *filename);
+CHASSIS_API chassis_log_backend_t* chassis_log_backend_new(void);
 CHASSIS_API void chassis_log_backend_free(chassis_log_backend_t* target);
 CHASSIS_API gboolean chassis_log_backend_reopen(chassis_log_backend_t* target, GError **gerr);
 /**
@@ -73,5 +110,19 @@ CHASSIS_API gboolean chassis_log_backend_open(chassis_log_backend_t* target, GEr
  * @return TRUE: the operation was successful, FALSE: the operation failed - check error for details
  */
 CHASSIS_API gboolean chassis_log_backend_close(chassis_log_backend_t* target, GError **error);
+
+#ifndef _WIN32
+CHASSIS_API gboolean chassis_log_backend_chown(chassis_log_backend_t* backend,
+		uid_t uid, gid_t gid,
+		GError **error);
+#endif
+
+CHASSIS_API chassis_log_backend_t* chassis_log_backend_file_new(const gchar *filename);
+CHASSIS_API chassis_log_backend_t* chassis_log_backend_stderr_new(void);
+CHASSIS_API chassis_log_backend_t* chassis_log_backend_syslog_new(void);
+CHASSIS_API chassis_log_backend_t* chassis_log_backend_eventlog_new(void);
+
+CHASSIS_API int chassis_log_backend_resolution_set(chassis_log_backend_t *backend, chassis_log_backend_resolution_t res);
+CHASSIS_API chassis_log_backend_resolution_t chassis_log_backend_resolution_get(chassis_log_backend_t *backend);
 
 #endif

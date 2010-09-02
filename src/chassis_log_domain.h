@@ -9,6 +9,8 @@
 
 #include "chassis_log_backend.h" /* the backends like syslog, file, stderr, ... */
 
+#define CHASSIS_LOG_DEFAULT_DOMAIN ""
+
 typedef struct chassis_log_domain chassis_log_domain_t;
 /**
  * A logger describes the attributes of a point in the logging hierarchy, such as the effective log level

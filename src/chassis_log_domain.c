@@ -30,7 +30,8 @@ void chassis_log_domain_free(chassis_log_domain_t* domain) {
 }
 
 void chassis_log_domain_log(chassis_log_domain_t* domain, GLogLevelFlags level, const gchar *message) {
-	if (domain->effective_level < level) {
+	if (level != CHASSIS_LOG_LEVEL_BROADCAST &&  /* _BROADCAST is logged always */
+	    domain->effective_level < level) {
 		return;
 	}
 	chassis_log_backend_log(domain->backend, domain->name, level, message);

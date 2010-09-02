@@ -19,51 +19,12 @@
 #include <glib.h>
 #include "chassis-exports.h"
 #include "chassis-log.h"
+#include "chassis_log_error.h"
 
 #define BACKENDS_GROUP "backends"
 #define DEFAULT_DOMAIN "default"
 #define LEVEL_KEY "level"
 #define BACKEND_KEY "backend"
-
-static GLogLevelFlags log_level_string_to_level(const gchar *level_str) {
-	GQuark level_quark = g_quark_from_string(level_str);
-#define STATIC_QUARK(x) static GQuark x ## _quark = 0
-#define INIT_QUARK(x) if (0 == x ## _quark) { x ## _quark = g_quark_from_static_string(#x); }
-	STATIC_QUARK(error);
-	STATIC_QUARK(critical);
-	STATIC_QUARK(warning);
-	STATIC_QUARK(message);
-	STATIC_QUARK(info);
-	STATIC_QUARK(debug);
-	INIT_QUARK(error)
-	INIT_QUARK(critical)
-	INIT_QUARK(warning)
-	INIT_QUARK(message)
-	INIT_QUARK(info)
-	INIT_QUARK(debug)
-#undef STATIC_QUARK
-#undef INIT_QUARK
-	
-	if (level_quark == error_quark) { return G_LOG_LEVEL_ERROR; }
-	else if (level_quark == critical_quark) { return G_LOG_LEVEL_CRITICAL; }
-	else if (level_quark == warning_quark) { return G_LOG_LEVEL_WARNING; }
-	else if (level_quark == message_quark) { return G_LOG_LEVEL_MESSAGE; }
-	else if (level_quark == info_quark) { return G_LOG_LEVEL_INFO; }
-	else if (level_quark == debug_quark) { return G_LOG_LEVEL_DEBUG; }
-	return 0;
-}
-
-GQuark chassis_log_error(void) {
-	return g_quark_from_static_string("chassis_log_error");
-}
-
-typedef enum {
-	CHASSIS_LOG_ERROR_NO_GROUP,
-	CHASSIS_LOG_ERROR_NO_BACKENDS,
-	CHASSIS_LOG_ERROR_NO_LOGLEVEL,
-	CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
-	CHASSIS_LOG_ERROR_UNKNOWN_BACKEND
-} chassis_log_error_t;
 
 gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GError **gerr) {
 	GKeyFile *config = g_key_file_new();
@@ -116,7 +77,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 		chassis_log_backend_t *backend;
 		gchar *backend_file = g_key_file_get_string(config, BACKENDS_GROUP, keys[i], NULL);
 
-		backend = chassis_log_backend_new(backend_file);
+		backend = chassis_log_backend_file_new(backend_file);
 		g_hash_table_insert(backends, keys[i], backend);
 		chassis_log_register_backend(log, backend);
 
@@ -130,7 +91,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 		goto error_cleanup;
 	}
 
-	default_log_level = log_level_string_to_level(default_log_level_str);
+	default_log_level = chassis_log_level_string_to_level(default_log_level_str);
 	if (default_log_level == 0) {
 		g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
 				"%s is not a valid log-level",
@@ -148,7 +109,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 		goto error_cleanup;
 	}
 	default_backend = g_hash_table_lookup(backends, default_backend_name);
-	default_domain = chassis_log_domain_new("", default_log_level, default_backend);
+	default_domain = chassis_log_domain_new(CHASSIS_LOG_DEFAULT_DOMAIN, default_log_level, default_backend);
 	chassis_log_register_domain(log, default_domain);
 
 	g_free(default_log_level_str);
@@ -171,7 +132,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 				continue;
 			}
 			level_str = g_key_file_get_string(config, domain_name, LEVEL_KEY, NULL);
-			level = log_level_string_to_level(level_str);
+			level = chassis_log_level_string_to_level(level_str);
 			if (level == 0) {
 				g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
 					"%s is not a valid log-level",

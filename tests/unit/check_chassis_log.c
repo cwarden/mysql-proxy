@@ -43,6 +43,7 @@ START_TEST(test_log_compress) {
 	GLogFunc old_log_func;
 
 	l = chassis_log_new();
+	chassis_log_set_default(l, NULL, G_LOG_LEVEL_CRITICAL);
 
 	g_log_set_always_fatal(G_LOG_FATAL_MASK);
 
@@ -59,41 +60,12 @@ START_TEST(test_log_compress) {
 }
 /*@}*/
 
-/**
- * @test Test log timestamp resolution
- */
-START_TEST(test_log_timestamp) {
-	chassis_log_t *l;
-	GLogFunc old_log_func;
-
-	l = chassis_log_new();
-	chassis_log_set_timestamp_resolution(l, CHASSIS_LOG_RESOLUTION_SEC);
-
-	g_log_set_always_fatal(G_LOG_FATAL_MASK);
-
-	old_log_func = g_log_set_default_handler(chassis_log_func, l);
-
-	g_critical("this message has a second-resolution timestamp");
-	chassis_log_set_timestamp_resolution(l, CHASSIS_LOG_RESOLUTION_MS);
-	g_critical("this message has a millisecond-resolution timestamp");
-
-	g_assert_cmpint(CHASSIS_LOG_RESOLUTION_MS, ==, chassis_log_get_timestamp_resolution(l));
-	/* tset back top _SEC resolution */
-	chassis_log_set_timestamp_resolution(l, CHASSIS_LOG_RESOLUTION_SEC);
-	g_assert_cmpint(CHASSIS_LOG_RESOLUTION_SEC, ==, chassis_log_get_timestamp_resolution(l));
-
-	g_log_set_default_handler(old_log_func, NULL);
-
-	chassis_log_free(l);
-}
-/*@}*/
-
 int main(int argc, char **argv) {
+	g_thread_init(NULL);
 	g_test_init(&argc, &argv, NULL);
 	g_test_bug_base("http://bugs.mysql.com/");
 
 	g_test_add_func("/core/log_compress", test_log_compress);
-	g_test_add_func("/core/log_timestamp", test_log_timestamp);
 
 	return g_test_run();
 }

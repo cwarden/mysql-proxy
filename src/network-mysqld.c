@@ -951,7 +951,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 			plugin_call_cleanup(srv, con);
 
 			/* dump the timestamps of this connection */
-			if (srv->log->min_lvl == G_LOG_LEVEL_DEBUG) {
+			if (chassis_log_get_effective_level(srv->log, G_LOG_DOMAIN) == G_LOG_LEVEL_DEBUG) {
 				GList *node;
 				guint64 abs_usec = 0;
 				guint64 wait_event_usec = 0;

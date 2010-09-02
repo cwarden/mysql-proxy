@@ -29,13 +29,6 @@
 
 #include "chassis-exports.h"
 
-typedef enum {
-	CHASSIS_LOG_RESOLUTION_SEC,
-	CHASSIS_LOG_RESOLUTION_MS
-} chassis_log_resolution_t;
-
-#define CHASSIS_LOG_RESOLUTION_DEFAULT	CHASSIS_LOG_RESOLUTION_SEC
-
 /**
  * @defgroup logging Hierarchical Logging
  * 
@@ -45,7 +38,7 @@ typedef enum {
  * It closely resembles log4j but differs in some ways:
  *  - it has no concept of appenders
  *  - there are not formatters
- *  - the logger repository is not pluggable
+ *  - the domain repository is not pluggable
  * 
  * Most of these limitations stem from the fact that this is not meant to be a generic log4c implementation,
  * there are already good ones out there.
@@ -66,9 +59,9 @@ typedef enum {
  * A log domain named \c "chassis.network.backend" is the child of \c "chassis.network" and so on.@n
  * If \c "chassis.network" has, via a configuration file, been assigned the log level \c MESSAGE, then \c "chassis.network.backend" would
  * inherit this log level (assuming there was no explicit configuration for it, too).@n
- * The same is true for the logger's backend - most likely a file name to write to.
+ * The same is true for the domain's backend - most likely a file name to write to.
  * 
- * There always is a "root logger" with the name of \c "" (empty string). If no other logger is configured, every other logger will inherit its
+ * There always is a "root domain" with the name of \c "" (empty string). If no other domain is configured, every other domain will inherit its
  * settings (effective log level and backend).
  * 
  * @section development Future development
@@ -82,88 +75,64 @@ typedef enum {
 #include "chassis_log_backend.h" /* the backends like syslog, file, stderr, ... */
 
 /**
- * The log stores the available hierarchical loggers and manages operations on them.
+ * The log stores the available hierarchical domains and manages operations on them.
  * 
- * It supports registration and rotation of loggers and force-broadcasting a message to all logs.
- * @note This is currently not threadsafe when manipulating the available loggers!
+ * It supports registration and rotation of domains and force-broadcasting a message to all logs.
+ * @note This is currently not threadsafe when manipulating the available domains!
  */
 
 /** @addtogroup chassis */
 /*@{*/
 typedef struct {
-	GLogLevelFlags min_lvl;
-
-	gchar *log_filename;
-	gint log_file_fd;
-
-	gboolean use_syslog;
-
-#ifdef _WIN32
-	HANDLE event_source_handle;
-	gboolean use_windows_applog;
-#endif
 	gboolean rotate_logs;
 
-	GString *log_ts_str;
-	chassis_log_resolution_t log_ts_resolution;	/*<< timestamp resolution (sec, ms) */
-
-	GString *last_msg;
-	time_t   last_msg_ts;
-	guint    last_msg_count;
-
-	GHashTable *domains;			/**< <gchar*, chassis_log_domain_t*> a map of all available domains, keyed by logger name */
+	GHashTable *domains;			/**< <gchar*, chassis_log_domain_t*> a map of all available domains, keyed by domain name */
 	GHashTable *backends;			/**< <gchar*, chassis_log_backend_t*> a map of all available backends, keyed by file name */
 } chassis_log_t;
 
 typedef chassis_log_t chassis_log G_GNUC_DEPRECATED;
-typedef chassis_log_t chassis_log_extended_t G_GNUC_DEPRECATED;
 
 CHASSIS_API chassis_log_t *chassis_log_init(void) G_GNUC_DEPRECATED;
 CHASSIS_API chassis_log_t *chassis_log_new(void);
-CHASSIS_API int chassis_log_set_level(chassis_log_t *log, const gchar *level);
+CHASSIS_API GLogLevelFlags chassis_log_level_string_to_level(const gchar *level);
 CHASSIS_API void chassis_log_free(chassis_log_t *log);
-CHASSIS_API int chassis_log_open(chassis_log_t *log);
-CHASSIS_API void chassis_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
 CHASSIS_API void chassis_log_set_logrotate(chassis_log_t *log);
-CHASSIS_API int chassis_log_set_event_log(chassis_log_t *log, const char *app_name);
 CHASSIS_API const char *chassis_log_skip_topsrcdir(const char *message);
-CHASSIS_API int chassis_log_set_timestamp_resolution(chassis_log_t *log, chassis_log_resolution_t res);
-CHASSIS_API chassis_log_resolution_t chassis_log_get_timestamp_resolution(chassis_log_t *log);
 
 /**
- * Registers a logger backend so it can be used with individual loggers.
+ * Registers a domain backend so it can be used with individual domains.
  * 
- * @param log_ext the log structure
+ * @param log the log structure
  * @param backend the backend to be added
- * @retval TRUE if the logger was registered
+ * @retval TRUE if the domain was registered
  * @retval FALSE if the registration failed or it already was registered (you should dispose backend yourself in this case)
  */
-CHASSIS_API gboolean chassis_log_register_backend(chassis_log_t *log_ext, chassis_log_backend_t *backend);
+CHASSIS_API gboolean chassis_log_register_backend(chassis_log_t *log, chassis_log_backend_t *backend);
 
 /**
- * Register a logger
+ * Register a domain
  *
  * @retval TRUE on success
  * @retval FALSE if the registration failed or it already was registered (you should dispose backend yourself in this case)
  */
-CHASSIS_API gboolean chassis_log_register_domain(chassis_log_t *log_ext, chassis_log_domain_t *logger);
-CHASSIS_API void chassis_log_unregister_domain(chassis_log_t *log_ext, chassis_log_domain_t *logger);
-CHASSIS_API chassis_log_domain_t* chassis_log_get_logger(chassis_log_t *log_ext, const gchar *logger_name);
-CHASSIS_API void chassis_log_reopen(chassis_log_t* log_ext);
-CHASSIS_API void chassis_log_force_log_all(chassis_log_t* log_ext, const gchar *message);
-CHASSIS_API GLogLevelFlags chassis_log_get_effective_level(chassis_log_t *log_ext, const gchar *logger_name);
+CHASSIS_API gboolean chassis_log_register_domain(chassis_log_t *log, chassis_log_domain_t *domain);
+CHASSIS_API void chassis_log_unregister_domain(chassis_log_t *log, chassis_log_domain_t *domain);
+CHASSIS_API chassis_log_domain_t* chassis_log_get_domain(chassis_log_t *log, const gchar *domain_name);
+CHASSIS_API void chassis_log_reopen(chassis_log_t* log);
+CHASSIS_API void chassis_log_force_log_all(chassis_log_t* log, const gchar *message);
+CHASSIS_API GLogLevelFlags chassis_log_get_effective_level(chassis_log_t *log, const gchar *domain_name);
 
 /**
  * Interface to glib2's logging system.
  * 
- * chassis_log_domain_log_func looks up the corresponding logger from the log_domain and passes control on.
- * The logger will determine whether or not to actually log the message and ask its backend to write the message.
- * @param log_domain the name of the logger this message belongs to.
+ * chassis_log_domain_log_func looks up the corresponding domain from the log_domain and passes control on.
+ * The domain will determine whether or not to actually log the message and ask its backend to write the message.
+ * @param log_domain the name of the domain this message belongs to.
  * @param log_level the log_level this message is on
  * @param message the pre-formatted message to log
  * @param user_data a pointer to chassis_log
  */
-CHASSIS_API void chassis_log_domain_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
+CHASSIS_API void chassis_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
 
 /* utility functions */
 /**
@@ -177,16 +146,21 @@ CHASSIS_API void chassis_log_domain_log_func(const gchar *log_domain, GLogLevelF
  * chassis_log_extract_hierarchy_names("a.b"); returns:
  *  { "", "a", "a.b", NULL }
  * 
- * @param logger_name a hierarchical name
+ * @param domain_name a hierarchical name
  * @param len pointer where to store the number of names, may to be NULL
  * @return an array of hierarchy names
- * @retval NULL if the logger_name is NULL
+ * @retval NULL if the domain_name is NULL
  */
-CHASSIS_API gchar** chassis_log_extract_hierarchy_names(const gchar *logger_name, gsize *len);
+CHASSIS_API gchar** chassis_log_extract_hierarchy_names(const gchar *domain_name, gsize *len);
 
-CHASSIS_API void chassis_log_domain_log_func(const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer user_data);
+CHASSIS_API gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GError **gerr);
 
-CHASSIS_API gboolean chassis_log_load_config(chassis_log_t *log_ext, const gchar *file_name, GError **gerr);
+#ifndef _WIN32
+CHASSIS_API gboolean chassis_log_chown(chassis_log_t *log, uid_t uid, gid_t gid, GError **gerr);
+#endif
+
+CHASSIS_API int chassis_log_set_default(chassis_log_t *log, const char *log_filename, GLogLevelFlags log_lvl);
+
 /*@}*/
 
 #endif

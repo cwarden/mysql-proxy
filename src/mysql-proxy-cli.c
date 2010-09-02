@@ -283,7 +283,8 @@ int main_cmdline(int argc, char **argv) {
 	}
 
 	log = chassis_log_new();
-	log->min_lvl = G_LOG_LEVEL_MESSAGE; /* display messages while parsing or loading plugins */
+	chassis_log_set_default(log, NULL, G_LOG_LEVEL_CRITICAL); /* default to stderr for everything that is critical */
+
 	g_log_set_default_handler(chassis_log_func, log);
 
 #ifdef _WIN32
@@ -427,13 +428,8 @@ int main_cmdline(int argc, char **argv) {
 	 *
 	 * If we have a log config file, it takes precendence before the simple other log-* options.
 	 */
-	if (frontend->log_filename) {
-		log->log_filename = g_strdup(frontend->log_filename);
-	}
 
-	log->use_syslog = frontend->use_syslog;
-
-	if (log->log_filename && log->use_syslog) {
+	if (frontend->log_filename && frontend->use_syslog) {
 		g_critical("%s: log-file and log-use-syslog were given, but only one is allowed",
 				G_STRLOC);
 		GOTO_EXIT(EXIT_FAILURE);
@@ -450,28 +446,37 @@ int main_cmdline(int argc, char **argv) {
 			GOTO_EXIT(EXIT_FAILURE);
 		}
 
-		/* reset the default log handler to our hierarchical logger */
-		g_log_set_default_handler(chassis_log_domain_log_func, log);
-
 		/* the system should now be set up, let's try to log something */
 		g_message("this should go to the root logger on level message");
-	} else if (log->log_filename && FALSE == chassis_log_open(log)) {
-		g_critical("can't open log-file '%s': %s", log->log_filename, g_strerror(errno));
-
-		GOTO_EXIT(EXIT_FAILURE);
-	}
-
-	/* handle log-level after the config-file is read, just in case it is specified in the file */
-	if (frontend->log_level) {
-		if (0 != chassis_log_set_level(log, frontend->log_level)) {
-			g_critical("--log-level=... failed, level '%s' is unknown ",
-					frontend->log_level);
-
-			GOTO_EXIT(EXIT_FAILURE);
-		}
 	} else {
-		/* if it is not set, use "critical" as default */
-		log->min_lvl = G_LOG_LEVEL_CRITICAL;
+		/* set a default config */
+		chassis_log_backend_t *backend;
+		chassis_log_domain_t *domain;
+		GLogLevelFlags log_lvl = G_LOG_LEVEL_CRITICAL;
+
+		/* handle log-level after the config-file is read, just in case it is specified in the file */
+		if (frontend->log_level) {
+			log_lvl = chassis_log_level_string_to_level(frontend->log_level);
+
+			if (0 == log_lvl) {
+				g_critical("--log-level=... failed, level '%s' is unknown ",
+						frontend->log_level);
+
+				GOTO_EXIT(EXIT_FAILURE);
+			}
+		}
+
+		if (frontend->log_filename) {
+			backend = chassis_log_backend_file_new(frontend->log_filename);
+		} else if (frontend->use_syslog) {
+			backend = chassis_log_backend_syslog_new();
+		} else {
+			backend = chassis_log_backend_stderr_new();
+		}
+		chassis_log_register_backend(log, backend);
+
+		domain = chassis_log_domain_new(CHASSIS_LOG_DEFAULT_DOMAIN, log_lvl, backend);
+		chassis_log_register_domain(log, domain);
 	}
 
 	/*
@@ -591,7 +596,7 @@ int main_cmdline(int argc, char **argv) {
 	/* the message has to be _after_ the g_option_content_parse() to 
 	 * hide from the output if the --help is asked for
 	 */
-	g_message("%s started", PACKAGE_STRING); /* add tag to the logfile (after we opened the logfile) */
+	g_log(NULL, CHASSIS_LOG_LEVEL_BROADCAST, "%s started", PACKAGE_STRING); /* add tag to the logfile (after we opened the logfile) */
 
 #ifdef _WIN32
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_RUNNING, 0);
@@ -632,7 +637,7 @@ exit_nicely:
 	chassis_set_shutdown_location(exit_location);
 
 	if (!frontend->print_version) {
-		g_log(G_LOG_DOMAIN, (frontend->verbose_shutdown ? G_LOG_LEVEL_CRITICAL : G_LOG_LEVEL_MESSAGE),
+		g_log(G_LOG_DOMAIN, (frontend->verbose_shutdown ? G_LOG_LEVEL_INFO : G_LOG_LEVEL_MESSAGE),
 				"shutting down normally, exit code is: %d", exit_code); /* add a tag to the logfile */
 	}
 

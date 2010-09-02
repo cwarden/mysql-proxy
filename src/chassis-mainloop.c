@@ -274,6 +274,7 @@ int chassis_mainloop(void *_chas) {
 	 */
 #ifndef _WIN32
 	if (chas->user) {
+		GError *gerr = NULL;
 		struct passwd *user_info;
 		uid_t user_id= geteuid();
 
@@ -288,17 +289,14 @@ int chassis_mainloop(void *_chas) {
 			return -1;
 		}
 
-		if (chas->log->log_filename) {
-			/* chown logfile */
-			if (-1 == chown(chas->log->log_filename, user_info->pw_uid, user_info->pw_gid)) {
-				g_critical("%s.%d: chown(%s) failed: %s",
-							__FILE__, __LINE__,
-							chas->log->log_filename,
-							g_strerror(errno) );
+		if (FALSE == chassis_log_chown(chas->log, user_info->pw_uid, user_info->pw_gid, &gerr)) {
+			g_critical("%s: %s",
+					G_STRLOC,
+					gerr->message);
 
-				return -1;
-			}
+			return -1;
 		}
+
 
 		setgid(user_info->pw_gid);
 		setuid(user_info->pw_uid);

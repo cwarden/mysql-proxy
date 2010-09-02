@@ -87,6 +87,7 @@ libmysql_chassis_la_SOURCES = \
 	chassis-log-config.c \
 	chassis_log_domain.c \
 	chassis_log_backend.c \
+	chassis_log_error.c \
 	chassis-mainloop.c \
 	chassis-event-thread.c \
 	chassis-keyfile.c \
@@ -153,6 +154,7 @@ include_HEADERS=\
 	chassis-log.h \
 	chassis_log_domain.h \
 	chassis_log_backend.h \
+	chassis_log_error.h \
 	chassis-keyfile.h \
 	chassis-mainloop.h \
 	chassis-path.h \
