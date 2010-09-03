@@ -159,6 +159,15 @@ CHASSIS_API gboolean chassis_log_load_config(chassis_log_t *log, const gchar *fi
 CHASSIS_API gboolean chassis_log_chown(chassis_log_t *log, uid_t uid, gid_t gid, GError **gerr);
 #endif
 
+/**
+ * setup a default domain that logs to a file
+ *
+ * a convinience function that sets up a common logging config
+ *
+ * @param log           the log
+ * @param log_filename  file to log to. If NULL, it logs to stderr
+ * @param log_lvl       minimum log-level for the default log
+ */
 CHASSIS_API int chassis_log_set_default(chassis_log_t *log, const char *log_filename, GLogLevelFlags log_lvl);
 
 /*@}*/
