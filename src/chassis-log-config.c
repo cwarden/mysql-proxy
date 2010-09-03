@@ -39,8 +39,9 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 	chassis_log_backend_t *default_backend;
 	gboolean ret = FALSE;
 
-	g_assert(log);
-	g_assert(file_name);
+	g_assert(NULL != log);
+	g_assert(NULL != file_name);
+
 	if (FALSE == g_key_file_load_from_file(config, file_name, G_KEY_FILE_NONE, gerr)) {
 		goto error_cleanup;
 	}
@@ -144,9 +145,9 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 			}
 			
 			backend_name = g_key_file_get_string(config, domain_name, BACKEND_KEY, NULL);
-			if (backend_name) {
+			if (NULL != backend_name) {
 				backend = g_hash_table_lookup(backends, backend_name);
-				if (!backend) {
+				if (NULL == backend) {
 					g_set_error(gerr, chassis_log_error(), CHASSIS_LOG_ERROR_UNKNOWN_BACKEND,
 						"[%s].%s %s is not defined in [%s]",
 						domain_name,
@@ -154,8 +155,8 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 						backend_name,
 						BACKENDS_GROUP);
 
-					if (level_str) g_free(level_str);
-					if (backend_name) g_free(backend_name);
+					if (NULL != level_str) g_free(level_str);
+					if (NULL != backend_name) g_free(backend_name);
 
 					goto error_cleanup;
 				}
@@ -163,8 +164,8 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 				chassis_log_register_domain(log, domain);
 			}
 
-			if (level_str) g_free(level_str);
-			if (backend_name) g_free(backend_name);
+			if (NULL != level_str) g_free(level_str);
+			if (NULL != backend_name) g_free(backend_name);
 		}
 	}
 	g_strfreev(groups);

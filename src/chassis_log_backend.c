@@ -129,7 +129,7 @@ gboolean chassis_log_backend_eventlog_open(chassis_log_backend_t* backend, GErro
 	backend->use_windows_applog = TRUE;
 	backend->event_source_handle = RegisterEventSource(NULL, app_name);
 
-	if (!backend->event_source_handle) {
+	if (NULL == backend->event_source_handle) {
 		int err = GetLastError();
 
 		g_critical("%s: RegisterEventSource(NULL, %s) failed: %s (%d)",
@@ -145,7 +145,7 @@ gboolean chassis_log_backend_eventlog_open(chassis_log_backend_t* backend, GErro
 }
 
 gboolean chassis_log_backend_event_close(chassis_log_backend_t* backend, GError **error) {
-	if (backend->event_source_handle) {
+	if (NULL != backend->event_source_handle) {
 		if (!DeregisterEventSource(backend->event_source_handle)) {
 			int err = GetLastError();
 
@@ -334,15 +334,15 @@ chassis_log_backend_t* chassis_log_backend_new(void) {
 }
 
 void chassis_log_backend_free(chassis_log_backend_t* backend) {
-	if (!backend) return;
+	if (NULL == backend) return;
 
 	chassis_log_backend_close(backend, NULL);
 
-	if (backend->file_path) g_free(backend->file_path);
-	if (backend->fd_lock) g_mutex_free(backend->fd_lock);
-	if (backend->log_str) g_string_free(backend->log_str, TRUE);
-	if (backend->last_msg) g_string_free(backend->last_msg, TRUE);
-	if (backend->last_loggers) g_hash_table_unref(backend->last_loggers);
+	if (NULL != backend->file_path) g_free(backend->file_path);
+	if (NULL != backend->fd_lock) g_mutex_free(backend->fd_lock);
+	if (NULL != backend->log_str) g_string_free(backend->log_str, TRUE);
+	if (NULL != backend->last_msg) g_string_free(backend->last_msg, TRUE);
+	if (NULL != backend->last_loggers) g_hash_table_unref(backend->last_loggers);
 
 	g_slice_free(chassis_log_backend_t, backend);
 }

@@ -22,9 +22,10 @@ chassis_log_domain_t* chassis_log_domain_new(const gchar *domain_name, GLogLevel
 }
 
 void chassis_log_domain_free(chassis_log_domain_t* domain) {
-	if (domain == NULL) return;
-	if (domain->name) g_free(domain->name);
-	if (domain->children) g_ptr_array_free(domain->children, TRUE);
+	if (NULL == domain) return;
+
+	if (NULL != domain->name) g_free(domain->name);
+	if (NULL != domain->children) g_ptr_array_free(domain->children, TRUE);
 
 	g_slice_free(chassis_log_domain_t, domain);
 }

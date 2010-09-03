@@ -95,10 +95,10 @@ GLogLevelFlags chassis_log_level_string_to_level(const gchar *level_str) {
 }
 
 void chassis_log_free(chassis_log_t *log) {
-	if (!log) return;
+	if (NULL == log) return;
 
-	if (log->domains) g_hash_table_destroy(log->domains);
-	if (log->backends) g_hash_table_destroy(log->backends);
+	if (NULL != log->domains) g_hash_table_destroy(log->domains);
+	if (NULL != log->backends) g_hash_table_destroy(log->backends);
 
 	g_free(log);
 }
@@ -116,8 +116,8 @@ gboolean chassis_log_register_backend(chassis_log_t *log, chassis_log_backend_t 
 	GError *gerr = NULL;
 	
 	/* check for a valid backend */
-	if (!backend) return FALSE;
-	if (!backend->name) return FALSE;
+	if (NULL == backend) return FALSE;
+	if (NULL == backend->name) return FALSE;
 	
 	registered_backend = g_hash_table_lookup(backends, backend->name);
 
@@ -142,7 +142,7 @@ static void chassis_log_domain_invalidate_hierarchy(gpointer data, gpointer G_GN
 	chassis_log_domain_t *domain = (chassis_log_domain_t*)data;
 	
 	/* don't touch explicit domains - stop condition for the recursion */
-	if (domain->is_implicit == FALSE) return;
+	if (FALSE == domain->is_implicit) return;
 	
 	/* otherwise reset the target and effective level for this domain and recurse into the children */
 	domain->effective_level = 0;
@@ -212,11 +212,11 @@ gboolean chassis_log_register_domain(chassis_log_t *log, chassis_log_domain_t *d
 			 * otherwise we would overwrite previously registered domains (such as the root domain)
 			 * we simply add the last domain created to the children list of the pre-existing domain and set our parent pointer to it
 			 */
-			if ((parent = chassis_log_get_domain_raw(log, name_parts[i]))) {
+			if (NULL != (parent = chassis_log_get_domain_raw(log, name_parts[i]))) {
 				/* if we haven't previously created an implicit domain, our direct parent already exists.
 				 * in that case the explicit domain we inserted is the "child"
 				 */
-				if (!implicit) {
+				if (NULL == implicit) {
 					implicit = domain;
 				}
 				g_ptr_array_add(parent->children, implicit);
@@ -237,7 +237,7 @@ gboolean chassis_log_register_domain(chassis_log_t *log, chassis_log_domain_t *d
 			previous = implicit;
 		}
 
-		if (name_parts) g_strfreev(name_parts); /* theoretically it could be NULL */
+		if (NULL != name_parts) g_strfreev(name_parts); /* theoretically it could be NULL */
 	}
 
 	return TRUE;
@@ -249,8 +249,8 @@ void chassis_log_unregister_domain(chassis_log_t G_GNUC_UNUSED *log, chassis_log
 }
 
 static chassis_log_domain_t* chassis_log_get_domain_raw(chassis_log_t *log, const gchar *domain_name) {
-	if (!log) return NULL;
-	if (!domain_name) return NULL;
+	if (NULL == log) return NULL;
+	if (NULL == domain_name) return NULL;
 
 	return g_hash_table_lookup(log->domains, domain_name);
 }
@@ -319,9 +319,10 @@ void chassis_log_force_log_all(chassis_log_t *log, const gchar *message) {
 	GHashTableIter iterator;
 	gpointer key, value;
 
-	g_assert(log->backends);
-	g_hash_table_iter_init (&iterator, log->backends);
-	while (g_hash_table_iter_next (&iterator, &key, &value)) {
+	g_assert(NULL != log->backends);
+
+	g_hash_table_iter_init(&iterator, log->backends);
+	while (g_hash_table_iter_next(&iterator, &key, &value)) {
 		chassis_log_backend_t *target = (chassis_log_backend_t*)value;
 		(void)key; /* silence unused variable warning */
 
@@ -352,7 +353,7 @@ static GLogLevelFlags chassis_log_get_effective_level_and_target(chassis_log_t *
 	chassis_log_domain_t *domain;
 
 	domain = chassis_log_get_domain_raw(log, domain_name);
-	if (!domain) return 0;
+	if (NULL == domain) return 0;
 
 	if (domain->effective_level == 0) {
 		if (domain->is_implicit) {
@@ -388,7 +389,7 @@ static GLogLevelFlags chassis_log_get_effective_level_and_target(chassis_log_t *
 	}
 
 	/* if requested, also return our target */
-	if (target) {
+	if (NULL != target) {
 		*target = domain->backend;
 	}
 
@@ -438,7 +439,7 @@ gchar** chassis_log_extract_hierarchy_names(const gchar *domain_name, gsize *len
 	/* add trailing NULL, so callers know when to stop */
 	substrings[i] = NULL;
 
-	if (len) {
+	if (NULL != len) {
 		*len = i;
 	}
 
@@ -449,7 +450,7 @@ int chassis_log_set_default(chassis_log_t *log, const char *log_filename, GLogLe
 	chassis_log_backend_t *backend;
 	chassis_log_domain_t *domain;
 
-	if (log_filename) {
+	if (NULL != log_filename) {
 		backend = chassis_log_backend_file_new(log_filename);
 	} else {
 		backend = chassis_log_backend_stderr_new();

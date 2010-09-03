@@ -1219,7 +1219,7 @@ int main(int argc, char **argv) {
 		goto exit_nicely;
 	}
 
-	if (default_file) {
+	if (NULL != default_file) {
 		keyfile = g_key_file_new();
 		g_key_file_set_list_separator(keyfile, ',');
 
@@ -1257,14 +1257,14 @@ int main(int argc, char **argv) {
 		goto exit_nicely;
 	}
 
-	if (keyfile) {
+	if (NULL != keyfile) {
 		if (chassis_keyfile_to_options(keyfile, "mysql-myisam-dump", main_entries)) {
 			exit_code = EXIT_FAILURE;
 			goto exit_nicely;
 		}
 	}
 
-	if (log_level_str) {
+	if (NULL != log_level_str) {
 		log_lvl = chassis_log_level_string_to_level(log_level_str);
 
 		if (0 == log_lvl) {
@@ -1282,7 +1282,7 @@ int main(int argc, char **argv) {
 		goto exit_nicely;
 	}
 
-	if (!frm_filename) {
+	if (NULL == frm_filename) {
 		exit_code = EXIT_FAILURE;
 		goto exit_nicely;
 	}
@@ -1293,15 +1293,15 @@ int main(int argc, char **argv) {
 	}
 
 exit_nicely:
-	if (option_ctx) g_option_context_free(option_ctx);
-	if (keyfile) g_key_file_free(keyfile);
-	if (default_file) g_free(default_file);
-	if (frm_filename) g_free(frm_filename);
-	if (gerr) g_error_free(gerr);
+	if (NULL != option_ctx) g_option_context_free(option_ctx);
+	if (NULL != keyfile) g_key_file_free(keyfile);
+	if (NULL != default_file) g_free(default_file);
+	if (NULL != frm_filename) g_free(frm_filename);
+	if (NULL != gerr) g_error_free(gerr);
 
-	if (log_level_str) g_free(log_level_str);
-	if (log_filename) g_free(log_filename);
-	if (chas) chassis_free(chas);
+	if (NULL != log_level_str) g_free(log_level_str);
+	if (NULL != log_filename) g_free(log_filename);
+	if (NULL != chas) chassis_free(chas);
 	
 	chassis_log_free(log);
 

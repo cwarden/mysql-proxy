@@ -1098,14 +1098,14 @@ int main(int argc, char **argv) {
 		goto exit_nicely;
 	}
 
-	if (keyfile) {
+	if (NULL != keyfile) {
 		if (chassis_keyfile_to_options(keyfile, "mysql-binlog-dump", main_entries)) {
 			exit_code = EXIT_FAILURE;
 			goto exit_nicely;
 		}
 	}
 
-	if (log_level_str) {
+	if (NULL != log_level_str) {
 		log_lvl = chassis_log_level_string_to_level(log_level_str);
 		if (0 == log_lvl) {
 			g_critical("--log-level=... failed, level '%s' is unknown ", log_level_str);
@@ -1115,7 +1115,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (chassis_log_set_default(log, log_filename, log_lvl)) {
+	if (0 != chassis_log_set_default(log, log_filename, log_lvl)) {
 		g_critical("can't open log-file '%s': %s", log_filename, g_strerror(errno));
 
 		exit_code = EXIT_FAILURE;
@@ -1123,7 +1123,7 @@ int main(int argc, char **argv) {
 	}
 
 
-	if (!binlog_filename) {
+	if (NULL == binlog_filename) {
 		exit_code = EXIT_FAILURE;
 		goto exit_nicely;
 	}
@@ -1135,15 +1135,15 @@ int main(int argc, char **argv) {
 			);
 
 exit_nicely:
-	if (option_ctx) g_option_context_free(option_ctx);
-	if (keyfile) g_key_file_free(keyfile);
-	if (default_file) g_free(default_file);
-	if (binlog_filename) g_free(binlog_filename);
-	if (gerr) g_error_free(gerr);
+	if (NULL != option_ctx) g_option_context_free(option_ctx);
+	if (NULL != keyfile) g_key_file_free(keyfile);
+	if (NULL != default_file) g_free(default_file);
+	if (NULL != binlog_filename) g_free(binlog_filename);
+	if (NULL != gerr) g_error_free(gerr);
 
-	if (log_level_str) g_free(log_level_str);
-	if (log_filename) g_free(log_filename);
-	if (chas) chassis_free(chas);
+	if (NULL != log_level_str) g_free(log_level_str);
+	if (NULL != log_filename) g_free(log_filename);
+	if (NULL != chas) chassis_free(chas);
 	
 	chassis_log_free(log);
 
