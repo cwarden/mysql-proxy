@@ -84,6 +84,10 @@ libmysql_chassis_la_SOURCES = \
 	lua-scope.c \
 	chassis-plugin.c \
 	chassis-log.c \
+	chassis-log-config.c \
+	chassis_log_domain.c \
+	chassis_log_backend.c \
+	chassis_log_error.c \
 	chassis-mainloop.c \
 	chassis-event-thread.c \
 	chassis-keyfile.c \
@@ -148,6 +152,9 @@ include_HEADERS=\
 	sys-pedantic.h \
 	chassis-plugin.h \
 	chassis-log.h \
+	chassis_log_domain.h \
+	chassis_log_backend.h \
+	chassis_log_error.h \
 	chassis-keyfile.h \
 	chassis-mainloop.h \
 	chassis-path.h \

@@ -209,11 +209,11 @@ static void sigterm_handler(int G_GNUC_UNUSED fd, short G_GNUC_UNUSED event_type
 static void sighup_handler(int G_GNUC_UNUSED fd, short G_GNUC_UNUSED event_type, void *_data) {
 	chassis *chas = _data;
 
-	g_message("received a SIGHUP, rotating logfile"); /* this should go into the old logfile */
+	g_message("received a SIGHUP, closing log file"); /* this should go into the old logfile */
 
 	chassis_log_set_logrotate(chas->log);
 	
-	g_message("rotated logfile"); /* ... and this into the new one */
+	g_message("re-opened log file after SIGHUP"); /* ... and this into the new one */
 }
 
 
@@ -274,6 +274,7 @@ int chassis_mainloop(void *_chas) {
 	 */
 #ifndef _WIN32
 	if (chas->user) {
+		GError *gerr = NULL;
 		struct passwd *user_info;
 		uid_t user_id= geteuid();
 
@@ -288,17 +289,14 @@ int chassis_mainloop(void *_chas) {
 			return -1;
 		}
 
-		if (chas->log->log_filename) {
-			/* chown logfile */
-			if (-1 == chown(chas->log->log_filename, user_info->pw_uid, user_info->pw_gid)) {
-				g_critical("%s.%d: chown(%s) failed: %s",
-							__FILE__, __LINE__,
-							chas->log->log_filename,
-							g_strerror(errno) );
+		if (FALSE == chassis_log_chown(chas->log, user_info->pw_uid, user_info->pw_gid, &gerr)) {
+			g_critical("%s: %s",
+					G_STRLOC,
+					gerr->message);
 
-				return -1;
-			}
+			return -1;
 		}
+
 
 		setgid(user_info->pw_gid);
 		setuid(user_info->pw_uid);

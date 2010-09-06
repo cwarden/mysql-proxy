@@ -67,7 +67,7 @@ struct chassis {
 	void (*priv_shutdown)(chassis *chas, chassis_private *priv);
 	void (*priv_free)(chassis *chas, chassis_private *priv);
 
-	chassis_log *log;
+	chassis_log_t *log;
 	
 	chassis_stats_t *stats;			/**< the overall chassis stats, includes lua and glib allocation stats */
 
