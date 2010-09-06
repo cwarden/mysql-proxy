@@ -56,6 +56,7 @@
 #endif
 
 #include <glib.h>
+#include <glib/gstdio.h> /* g_unlink() */
 #include <gmodule.h>
 
 #ifdef HAVE_LUA_H
