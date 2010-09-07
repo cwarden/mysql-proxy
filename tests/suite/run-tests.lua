@@ -224,7 +224,6 @@ function MySQLProxy:get_args(opts)
 		self:add_backend(("%s:%d"):format(MYSQL_HOST, MYSQL_PORT))
 	end
 
-	-- init ourself
 	opts = opts or { }
 	opts["plugin-dir"]   = self.testenv["plugin_dir"]
 	opts["basedir"]      = self.testenv["basedir"]
@@ -237,11 +236,6 @@ function MySQLProxy:get_args(opts)
 	opts["lua-cpath"]    = self.testenv.lua_cpath
 
 	opts["proxy-backend-addresses"] = self.backends
-
-	local extra_params = os.getenv("PROXY_PARAMS")
-	if extra_params then
-		-- FIXME: implement me
-	end
 
 	return opts
 end
@@ -328,10 +322,15 @@ end
 MySQLProxyTest = Test:new()
 
 ---
--- a ugly hack ... don't talk about it
+-- 'test_self' is a hack to pass down the object we test right now to chain_proxy().
+--
+-- It is set in MySQLProxyTest:setup() 
 test_self = nil
 
+---
 -- setup the backend proxies and wire them together
+--
+-- depends on 'test_self' being a set to the currently running Test-object
 function chain_proxy(backend_filenames, script_filename)
 	local self = test_self
 
@@ -436,7 +435,7 @@ function MySQLProxyTest:setup()
 	-- if not, assume that we want to start a proxy with the script_filename
 	if has_options_file then
 		-- load the options file
-		test_self = self
+		test_self = self -- expose 'self' so that chain_proxy() can use it
 		local setup_func, errmsg = loadfile(options_filename)
 		if not setup_func then
 			return false, errmsg
