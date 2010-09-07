@@ -169,8 +169,7 @@ void chassis_frontend_free(chassis_frontend_t *frontend) {
 	if (frontend->log_filename) g_free(frontend->log_filename);
 	if (frontend->log_config_filename) g_free(frontend->log_config_filename);
 	if (frontend->pid_file) {
-		/* only try to delete the PID if we created it
-		 */
+		/* only try to delete the PID if we created it */
 		if (frontend->pid_file_is_created) {
 			g_unlink(frontend->pid_file);
 		}
