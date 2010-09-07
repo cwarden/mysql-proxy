@@ -23,24 +23,8 @@
 -- by comparing the statement-ids and the connection ids we can 
 -- track if the ro-pooling script was reusing a connection
 --
-function packet_auth(fields)
-	fields = fields or { }
-	return "\010" ..             -- proto version
-		(fields.version or "5.0.45-proxy") .. -- version
-		"\000" ..             -- term-null
-		"\001\000\000\000" .. -- thread-id
-		"\065\065\065\065" ..
-		"\065\065\065\065" .. -- challenge - part I
-		"\000" ..             -- filler
-		"\001\130" ..         -- server cap (long pass, 4.1 proto)
-		"\008" ..             -- charset
-		"\002\000" ..         -- status
-		("\000"):rep(13) ..   -- filler
-		"\065\065\065\065"..
-		"\065\065\065\065"..
-		"\065\065\065\065"..
-		"\000"                -- challenge - part II
-end
+
+local proto = require("mysql.proto")
 
 -- will be called once after connect
 stmt_id = 0
@@ -60,7 +44,7 @@ function connect_server()
 	proxy.response = {
 		type = proxy.MYSQLD_PACKET_RAW,
 		packets = {
-			packet_auth()
+			proto.to_challenge_packet({})
 		}
 	}
 	return proxy.PROXY_SEND_RESULT
@@ -78,15 +62,15 @@ function read_query(packet)
 	stmt_id = stmt_id + 1
 
 	local query = packet:sub(2) 
-	if query == 'SELECT counter' then
+	if query == 'SELECT conn_id, stmt_id' then
 		proxy.response = {
 			type = proxy.MYSQLD_PACKET_OK,
 			resultset = {
 				fields = {
-					{ name = 'conn_id' },
-					{ name = 'stmt_id' },
+					{ name = 'conn_id', type = proxy.MYSQLD_TYPE_INT },
+					{ name = 'stmt_id', type = proxy.MYSQLD_TYPE_INT },
 				},
-				rows = { { tostring(conn_id), tostring(stmt_id) } }
+				rows = { { conn_id, stmt_id } }
 			}
 		}
 	else

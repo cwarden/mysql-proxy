@@ -17,22 +17,30 @@
 #  02110-1301  USA
 # 
 #  $%ENDLICENSE%$
-connect (conn1,127.0.0.1,root,,,$PROXY_PORT); 
-SELECT counter;
+
+# open a few connections and test if they reuse connections that
+# end up in the pool
+
+connect (conn1,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
 disconnect conn1;
 
-connect (conn2,127.0.0.1,root,,,$PROXY_PORT); 
-SELECT counter;
+connect (conn2,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
 disconnect conn2;
 
-connect (conn3,127.0.0.1,root,,,$PROXY_PORT); 
-SELECT counter;
+connect (conn3,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
 disconnect conn3;
 
-connect (conn4,127.0.0.1,root,,,$PROXY_PORT); 
-SELECT counter;
+connect (conn4,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
 disconnect conn4;
 
-connect (conn5,127.0.0.1,root,,,$PROXY_PORT); 
-SELECT counter;
+connect (conn5,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
 disconnect conn5;
+
+connect (conn6,$PROXY_HOST,root,,,$PROXY_PORT); 
+SELECT conn_id, stmt_id;
+disconnect conn6;
