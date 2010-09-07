@@ -4,6 +4,7 @@
 #include "config.h"
 #endif
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -23,6 +24,14 @@ static int lua_getpid (lua_State *L) {
 
 static int lua_getuid (lua_State *L) {
 	lua_pushinteger (L, getuid());
+
+	return 1;
+}
+
+static int lua_getcwd (lua_State *L) {
+	char cwd[MAXPATHLEN];
+
+	lua_pushstring (L, getcwd(cwd, sizeof(cwd)));
 
 	return 1;
 }
@@ -76,6 +85,7 @@ static const struct luaL_reg posixlib[] = {
 	{"getpid", lua_getpid},
 	{"getuid", lua_getuid},
 	{"getpwuid", lua_getpwuid},
+	{"getcwd", lua_getcwd},
 	{NULL, NULL},
 };
 

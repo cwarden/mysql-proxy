@@ -10,6 +10,14 @@ function file_exists(f)
 end
 
 ---
+-- check if a path is absolute 
+--
+-- FIXME: right now it is Unix only
+function path_is_absolute(f)
+	return f:byte() == "/"
+end
+
+---
 -- get the directory-name of a path
 --
 -- @param filename path to create the directory name from

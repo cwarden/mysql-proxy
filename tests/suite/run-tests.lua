@@ -80,6 +80,18 @@ function TestRunner:new(o)
 	self.testenv.MYSQL_CLIENT_BIN = os.getenv("MYSQL_CLIENT_BIN")   or "mysql"
 	self.testenv.PROXY_CHAIN_PORT = os.getenv("PROXY_CHAIN_PORT")	or tostring(port_base + 30)
 
+	self.testenv.abs_srcdir	      = os.getenv("abs_srcdir")
+
+	if not self.testenv.abs_srcdir then
+		if not fileutils.path_is_absolute(self.testenv.srcdir) then
+			local abs_srcdir = posix.getcwd() .. "/" .. self.testenv.srcdir
+			self.testenv.abs_srcdir = abs_srcdir
+		else
+			self.testenv.abs_srcdir = self.testenv.srcdir
+		end
+		glib2.setenv("abs_srcdir", self.testenv.abs_srcdir) -- expose the abs_srcdir again as we run the proxy as --daemon which chdir()s to /
+	end
+
 	return o
 end
 

@@ -33,6 +33,16 @@ static int lua_g_usleep (lua_State *L) {
 	return 0;
 }
 
+static int lua_g_setenv (lua_State *L) {
+	const char * key = luaL_checkstring (L, 1);
+	const char * value = luaL_checkstring (L, 2);
+	int overwrite = luaL_optint(L, 3, 1);
+
+	lua_pushboolean(L, g_setenv(key, value, overwrite));
+
+	return 1;
+}
+
 static int lua_g_get_current_time (lua_State *L) {
 	GTimeVal t;
 
@@ -83,6 +93,7 @@ static const struct luaL_reg gliblib[] = {
 	{"usleep", lua_g_usleep},
 	{"md5", lua_g_checksum_md5},
 	{"get_current_time", lua_g_get_current_time},
+	{"setenv", lua_g_setenv},
 	{NULL, NULL},
 };
 

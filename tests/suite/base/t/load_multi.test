@@ -18,14 +18,14 @@
 # 
 #  $%ENDLICENSE%$
 --disable_query_log
---replace_result $srcdir <srcdir>
---eval pload $srcdir/base/t/lm2.lua
+--replace_result $abs_srcdir <srcdir>
+--eval pload $abs_srcdir/base/t/lm2.lua
 --enable_query_log
 connect (conn1,127.0.0.1,$MYSQL_USER,$MYSQL_PASSWORD,test,$PROXY_PORT,);
 select pload status;
 --disable_query_log
---replace_result $srcdir <srcdir>
---eval pload $srcdir/base/t/lm1.lua
+--replace_result $abs_srcdir <srcdir>
+--eval pload $abs_srcdir/base/t/lm1.lua
 --enable_query_log
 connection conn1;
 select 'first' as info;
@@ -44,13 +44,13 @@ connection default;
 disconnect conn1;
 disconnect conn2;
 --disable_query_log
---replace_result $srcdir <srcdir>
---eval pload $srcdir/base/t/lm3.lua
+--replace_result $abs_srcdir <srcdir>
+--eval pload $abs_srcdir/base/t/lm3.lua
 --enable_query_log
 select 1000;
 --disable_query_log
---replace_result $srcdir <srcdir>
---eval punload $srcdir/base/t/lm3.lua
+--replace_result $abs_srcdir <srcdir>
+--eval punload $abs_srcdir/base/t/lm3.lua
 --enable_query_log
 select 1000;
 
