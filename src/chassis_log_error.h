@@ -1,0 +1,17 @@
+#ifndef __CHASSIS_LOG_ERROR_H__
+#define __CHASSIS_LOG_ERROR_H__
+
+#include <glib.h>
+
+typedef enum {
+	CHASSIS_LOG_ERROR_NO_GROUP,
+	CHASSIS_LOG_ERROR_NO_BACKENDS,
+	CHASSIS_LOG_ERROR_NO_LOGLEVEL,
+	CHASSIS_LOG_ERROR_INVALID_LOGLEVEL,
+	CHASSIS_LOG_ERROR_UNKNOWN_BACKEND,
+	CHASSIS_LOG_ERROR_CHOWN
+} chassis_log_error_t;
+
+GQuark chassis_log_error(void);
+
+#endif

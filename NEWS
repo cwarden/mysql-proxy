@@ -1,4 +1,10 @@
-0.8.1
+0.9.0 - 
+
+  * added domain specific logging
+  * refactored the test-suite
+  * remove the PID file on successful shutdown
+
+0.8.1 - 2010-09-13
 
   * remove unix-socket on shutdown
   * fixed handling of LOAD DATA LOCAL INFILE (#51864)

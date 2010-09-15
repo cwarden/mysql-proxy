@@ -1,5 +1,5 @@
 #  $%BEGINLICENSE%$
-#  Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+#  Copyright (c) 2007, 2008, Oracle and/or its affiliates. All rights reserved.
 # 
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License as
@@ -18,7 +18,5 @@
 # 
 #  $%ENDLICENSE%$
 
-# fetch the Lua version of the current file-name  
---let current_backtrace_filename = query_get_value("SELECT current_backtrace_filename", "filename", 1)
---replace_result $current_backtrace_filename "[string \"lineno.lua\"]"
-SELECT backtrace;
+ignore_and_default;
+ignore_and_replace;

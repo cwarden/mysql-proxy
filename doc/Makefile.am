@@ -5,6 +5,7 @@ EXTRA_DIST = \
 	     architecture.txt \
 	     core.txt \
 	     chassis.txt \
+	     log-domains.txt \
 	     plugins.txt \
 	     protocol.txt \
 	     tests.txt \

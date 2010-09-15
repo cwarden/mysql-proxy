@@ -56,6 +56,7 @@
 #endif
 
 #include <glib.h>
+#include <glib/gstdio.h> /* g_unlink() */
 #include <gmodule.h>
 
 #ifdef HAVE_LUA_H
@@ -116,6 +117,7 @@ typedef struct {
 	GOptionEntry *config_entries;
 
 	gchar *pid_file;
+	gboolean pid_file_is_created;
 
 	gchar *plugin_dir;
 	gchar **plugin_names;
@@ -132,6 +134,7 @@ typedef struct {
 
 	gchar *log_level;
 	gchar *log_filename;
+	gchar *log_config_filename;
 	int    use_syslog;
 
 	char *lua_path;
@@ -167,7 +170,15 @@ void chassis_frontend_free(chassis_frontend_t *frontend) {
 
 	if (frontend->base_dir) g_free(frontend->base_dir);
 	if (frontend->user) g_free(frontend->user);
-	if (frontend->pid_file) g_free(frontend->pid_file);
+	if (frontend->log_filename) g_free(frontend->log_filename);
+	if (frontend->log_config_filename) g_free(frontend->log_config_filename);
+	if (frontend->pid_file) {
+		/* only try to delete the PID if we created it */
+		if (frontend->pid_file_is_created) {
+			g_unlink(frontend->pid_file);
+		}
+		g_free(frontend->pid_file);
+	}
 	if (frontend->log_level) g_free(frontend->log_level);
 	if (frontend->plugin_dir) g_free(frontend->plugin_dir);
 
@@ -210,10 +221,13 @@ int chassis_frontend_set_chassis_options(chassis_frontend_t *frontend, chassis_o
 		"plugins",                  0, 0, G_OPTION_ARG_STRING_ARRAY, &(frontend->plugin_names), "plugins to load", "<name>");
 
 	chassis_options_add(opts,
-		"log-level",                0, 0, G_OPTION_ARG_STRING, &(frontend->log_level), "log all messages of level ... or higher", "(error|warning|info|message|debug)");
+		"log-level",                0, 0, G_OPTION_ARG_STRING, &(frontend->log_level), "log all messages of level ... or higher", "(error|warning|message|debug)");
 
 	chassis_options_add(opts,
 		"log-file",                 0, 0, G_OPTION_ARG_STRING, &(frontend->log_filename), "log all messages in a file", "<file>");
+
+	chassis_options_add(opts,
+		"log-config-file",          0, 0, G_OPTION_ARG_FILENAME, &(frontend->log_config_filename), "Use domain specific logging configuration", "<file>");
 
 	chassis_options_add(opts,
 		"log-use-syslog",           0, 0, G_OPTION_ARG_NONE, &(frontend->use_syslog), "log all messages to syslog", NULL);
@@ -275,7 +289,7 @@ int main_cmdline(int argc, char **argv) {
 	chassis_options_t *opts = NULL;
 
 	GError *gerr = NULL;
-	chassis_log *log = NULL;
+	chassis_log_t *log = NULL;
 
 	/* a little helper macro to set the src-location that we stepped out at to exit */
 #define GOTO_EXIT(status) \
@@ -290,9 +304,9 @@ int main_cmdline(int argc, char **argv) {
 		GOTO_EXIT(EXIT_FAILURE);
 	}
 
-	/* start the logging ... to stderr */
 	log = chassis_log_new();
-	log->min_lvl = G_LOG_LEVEL_MESSAGE; /* display messages while parsing or loading plugins */
+	chassis_log_set_default(log, NULL, G_LOG_LEVEL_CRITICAL); /* default to stderr for everything that is critical */
+
 	g_log_set_default_handler(chassis_log_func, log);
 
 #ifdef _WIN32
@@ -314,6 +328,7 @@ int main_cmdline(int argc, char **argv) {
 
 	frontend = chassis_frontend_new();
 	option_ctx = g_option_context_new("- MySQL Proxy");
+
 	/**
 	 * parse once to get the basic options like --defaults-file and --version
 	 *
@@ -425,42 +440,65 @@ int main_cmdline(int argc, char **argv) {
 	 * from the plugins, thus we need to fix them up before
 	 * dealing with all the rest.
 	 */
+	chassis_resolve_path(srv->base_dir, &frontend->log_config_filename);
 	chassis_resolve_path(srv->base_dir, &frontend->log_filename);
 	chassis_resolve_path(srv->base_dir, &frontend->pid_file);
 	chassis_resolve_path(srv->base_dir, &frontend->plugin_dir);
 
 	/*
 	 * start the logging
+	 *
+	 * If we have a log config file, it takes precendence before the simple other log-* options.
 	 */
-	if (frontend->log_filename) {
-		log->log_filename = g_strdup(frontend->log_filename);
-	}
 
-	log->use_syslog = frontend->use_syslog;
-
-	if (log->log_filename && log->use_syslog) {
+	if (frontend->log_filename && frontend->use_syslog) {
 		g_critical("%s: log-file and log-use-syslog were given, but only one is allowed",
 				G_STRLOC);
 		GOTO_EXIT(EXIT_FAILURE);
 	}
 
-	if (log->log_filename && FALSE == chassis_log_open(log)) {
-		g_critical("can't open log-file '%s': %s", log->log_filename, g_strerror(errno));
-
-		GOTO_EXIT(EXIT_FAILURE);
-	}
-
-	/* handle log-level after the config-file is read, just in case it is specified in the file */
-	if (frontend->log_level) {
-		if (0 != chassis_log_set_level(log, frontend->log_level)) {
-			g_critical("--log-level=... failed, level '%s' is unknown ",
-					frontend->log_level);
+	if (frontend->log_config_filename) {
+		if (FALSE == chassis_log_load_config(log, frontend->log_config_filename, &gerr)) {
+			g_critical("%s: reading log-config from %s failed: %s",
+					G_STRLOC,
+					frontend->log_config_filename,
+					gerr->message);
+			g_clear_error(&gerr);
 
 			GOTO_EXIT(EXIT_FAILURE);
 		}
+
+		/* the system should now be set up, let's try to log something */
+		g_message("this should go to the root logger on level message");
 	} else {
-		/* if it is not set, use "critical" as default */
-		log->min_lvl = G_LOG_LEVEL_CRITICAL;
+		/* set a default config */
+		chassis_log_backend_t *backend;
+		chassis_log_domain_t *domain;
+		GLogLevelFlags log_lvl = G_LOG_LEVEL_CRITICAL;
+
+		/* handle log-level after the config-file is read, just in case it is specified in the file */
+		if (frontend->log_level) {
+			log_lvl = chassis_log_level_string_to_level(frontend->log_level);
+
+			if (0 == log_lvl) {
+				g_critical("--log-level=... failed, level '%s' is unknown ",
+						frontend->log_level);
+
+				GOTO_EXIT(EXIT_FAILURE);
+			}
+		}
+
+		if (frontend->log_filename) {
+			backend = chassis_log_backend_file_new(frontend->log_filename);
+		} else if (frontend->use_syslog) {
+			backend = chassis_log_backend_syslog_new();
+		} else {
+			backend = chassis_log_backend_stderr_new();
+		}
+		chassis_log_register_backend(log, backend);
+
+		domain = chassis_log_domain_new(CHASSIS_LOG_DEFAULT_DOMAIN, log_lvl, backend);
+		chassis_log_register_domain(log, domain);
 	}
 
 	/*
@@ -575,12 +613,13 @@ int main_cmdline(int argc, char **argv) {
 
 			GOTO_EXIT(EXIT_FAILURE);
 		}
+		frontend->pid_file_is_created = TRUE; /* track that we created the PID file successfully and can delete it */
 	}
 
 	/* the message has to be _after_ the g_option_content_parse() to 
 	 * hide from the output if the --help is asked for
 	 */
-	g_message("%s started", PACKAGE_STRING); /* add tag to the logfile (after we opened the logfile) */
+	g_log(NULL, CHASSIS_LOG_LEVEL_BROADCAST, "%s started", PACKAGE_STRING); /* add tag to the logfile (after we opened the logfile) */
 
 #ifdef _WIN32
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_RUNNING, 0);
@@ -632,12 +671,20 @@ exit_nicely:
 	chassis_set_shutdown_location(exit_location);
 
 	if (!frontend->print_version) {
-		g_log(G_LOG_DOMAIN, (frontend->verbose_shutdown ? G_LOG_LEVEL_CRITICAL : G_LOG_LEVEL_MESSAGE),
+		g_log(G_LOG_DOMAIN, (frontend->verbose_shutdown ? G_LOG_LEVEL_INFO : G_LOG_LEVEL_MESSAGE),
 				"shutting down normally, exit code is: %d", exit_code); /* add a tag to the logfile */
 	}
 
 #ifdef _WIN32
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_STOP_PENDING, 0);
+#endif
+
+#ifdef HAVE_SIGACTION
+	/* reset the handler */
+	sigsegv_sa.sa_handler = SIG_DFL;
+	if (frontend->invoke_dbg_on_crash && !(RUNNING_ON_VALGRIND)) {
+		sigaction(SIGSEGV, &sigsegv_sa, NULL);
+	}
 #endif
 
 	chassis_frontend_free(frontend);	
@@ -652,14 +699,6 @@ exit_nicely:
 	
 #ifdef _WIN32
 	if (chassis_win32_is_service()) chassis_win32_service_set_state(SERVICE_STOPPED, 0);
-#endif
-
-#ifdef HAVE_SIGACTION
-	/* reset the handler */
-	sigsegv_sa.sa_handler = SIG_DFL;
-	if (frontend->invoke_dbg_on_crash && !(RUNNING_ON_VALGRIND)) {
-		sigaction(SIGSEGV, &sigsegv_sa, NULL);
-	}
 #endif
 
 	return exit_code;

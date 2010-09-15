@@ -955,11 +955,13 @@ int main(int argc, char **argv) {
 	const gchar *check_str = NULL;
 	gchar *default_file = NULL;
 
-	gchar *log_level = NULL;
+	gchar *log_level_str = NULL;
+	gchar *log_filename = NULL;
 	gchar *binlog_filename = NULL;
 
 	GKeyFile *keyfile = NULL;
-	chassis_log *log;
+	chassis_log_t *log;
+	GLogLevelFlags log_lvl = G_LOG_LEVEL_CRITICAL;
 	gint binlog_start_pos = 0;
 	gboolean binlog_find_start_pos = FALSE;
 
@@ -974,9 +976,8 @@ int main(int argc, char **argv) {
 
 	GOptionEntry main_entries[] = 
 	{
-		{ "log-level",                0, 0, G_OPTION_ARG_STRING, NULL, "log all messages of level ... or higer", "(error|warning|info|message|debug)" },
+		{ "log-level",                0, 0, G_OPTION_ARG_STRING, NULL, "log all messages of level ... or higer", "(error|warning|message|debug)" },
 		{ "log-file",                 0, 0, G_OPTION_ARG_STRING, NULL, "log all messages in a file", "<file>" },
-		{ "log-use-syslog",           0, 0, G_OPTION_ARG_NONE, NULL, "send all log-messages to syslog", NULL },
 		
 		{ "binlog-file",              0, 0, G_OPTION_ARG_FILENAME, NULL, "binlog filename", NULL },
 		{ "binlog-start-pos",         0, 0, G_OPTION_ARG_INT, NULL, "binlog start position", NULL },
@@ -1026,8 +1027,7 @@ int main(int argc, char **argv) {
 	g_thread_init(NULL);
 
 	log = chassis_log_new();
-	log->min_lvl = G_LOG_LEVEL_MESSAGE; /* display messages while parsing or loading plugins */
-	
+	chassis_log_set_default(log, NULL, log_lvl); /* default to stderr for everything that is critical */
 	g_log_set_default_handler(chassis_log_func, log);
 
 	chas = chassis_new();
@@ -1037,9 +1037,8 @@ int main(int argc, char **argv) {
 	base_main_entries[i++].arg_data  = &(default_file);
 
 	i = 0;
-	main_entries[i++].arg_data  = &(log_level);
-	main_entries[i++].arg_data  = &(log->log_filename);
-	main_entries[i++].arg_data  = &(log->use_syslog);
+	main_entries[i++].arg_data  = &(log_level_str);
+	main_entries[i++].arg_data  = &(log_filename);
 	main_entries[i++].arg_data  = &(binlog_filename);
 	main_entries[i++].arg_data  = &(binlog_start_pos);
 	main_entries[i++].arg_data  = &(binlog_find_start_pos);
@@ -1099,37 +1098,32 @@ int main(int argc, char **argv) {
 		goto exit_nicely;
 	}
 
-	if (keyfile) {
+	if (NULL != keyfile) {
 		if (chassis_keyfile_to_options(keyfile, "mysql-binlog-dump", main_entries)) {
 			exit_code = EXIT_FAILURE;
 			goto exit_nicely;
 		}
 	}
 
-	if (log->log_filename) {
-		if (0 == chassis_log_open(log)) {
-			g_critical("can't open log-file '%s': %s", log->log_filename, g_strerror(errno));
+	if (NULL != log_level_str) {
+		log_lvl = chassis_log_level_string_to_level(log_level_str);
+		if (0 == log_lvl) {
+			g_critical("--log-level=... failed, level '%s' is unknown ", log_level_str);
 
 			exit_code = EXIT_FAILURE;
 			goto exit_nicely;
 		}
 	}
 
+	if (0 != chassis_log_set_default(log, log_filename, log_lvl)) {
+		g_critical("can't open log-file '%s': %s", log_filename, g_strerror(errno));
 
-	/* handle log-level after the config-file is read, just in case it is specified in the file */
-	if (log_level) {
-		if (0 != chassis_log_set_level(log, log_level)) {
-			g_critical("--log-level=... failed, level '%s' is unknown ", log_level);
-
-			exit_code = EXIT_FAILURE;
-			goto exit_nicely;
-		}
-	} else {
-		/* if it is not set, use "critical" as default */
-		log->min_lvl = G_LOG_LEVEL_CRITICAL;
+		exit_code = EXIT_FAILURE;
+		goto exit_nicely;
 	}
 
-	if (!binlog_filename) {
+
+	if (NULL == binlog_filename) {
 		exit_code = EXIT_FAILURE;
 		goto exit_nicely;
 	}
@@ -1141,14 +1135,15 @@ int main(int argc, char **argv) {
 			);
 
 exit_nicely:
-	if (option_ctx) g_option_context_free(option_ctx);
-	if (keyfile) g_key_file_free(keyfile);
-	if (default_file) g_free(default_file);
-	if (binlog_filename) g_free(binlog_filename);
-	if (gerr) g_error_free(gerr);
+	if (NULL != option_ctx) g_option_context_free(option_ctx);
+	if (NULL != keyfile) g_key_file_free(keyfile);
+	if (NULL != default_file) g_free(default_file);
+	if (NULL != binlog_filename) g_free(binlog_filename);
+	if (NULL != gerr) g_error_free(gerr);
 
-	if (log_level) g_free(log_level);
-	if (chas) chassis_free(chas);
+	if (NULL != log_level_str) g_free(log_level_str);
+	if (NULL != log_filename) g_free(log_filename);
+	if (NULL != chas) chassis_free(chas);
 	
 	chassis_log_free(log);
 
