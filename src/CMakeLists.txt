@@ -72,6 +72,8 @@ SET(proxy_sources
 	network-mysqld.c 
 	network-mysqld-lua.c 
 	network-mysqld-proto.c 
+	network_mysqld_type.c 
+	network_mysqld_proto_binary.c 
 	network-mysqld-binlog.c 
 	network-mysqld-packet.c 
 	network-mysqld-masterinfo.c 
@@ -209,6 +211,8 @@ INSTALL(FILES
 	network-mysqld.h
 	network-mysqld-lua.h
 	network-mysqld-proto.h
+	network_mysqld_type.h
+	network_mysqld_proto_binary.h
 	network-mysqld-binlog.h
 	network-mysqld-packet.h
 	network-mysqld-masterinfo.h
