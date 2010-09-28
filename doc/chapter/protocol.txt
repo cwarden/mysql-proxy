@@ -255,23 +255,27 @@ Sequence ID
 
 The sequence-id is incremented with each packet and may wrap around. It starts at 0 and is reset to 0 when a new command begins in `the Command Phase`_.
 
-Compression
------------
+Compressed Packet
+=================
 
-Compression is enabled if the server announces `CLIENT_COMPRESS`_ in its `Auth Challenge Packet`_ and the clients requests it too in its `Auth Response Packet`_.
+Compression is extension to the MySQL Protocol, is transparent to the rest of the MySQL protocol and allows to compress chunks of bytes (e.g. a `MySQL Packet`_).
+The maximum size of a chunk to compress is 16Mbyte.
 
-It uses the `deflate` algorithm as defined in RFC 1951 and implemented in zlib to compress the original MySQL packet stream. The header of the compressed packet
-has the parameters of the `uncompress` function in mind::
+It is enabled if the server announces `CLIENT_COMPRESS`_ in its `Auth Challenge Packet`_ and the clients requests it too in its `Auth Response Packet`_. It is used
+only in the `the Command Phase`_.
+
+It uses the `deflate` algorithm as defined in RFC 1951 and implemented in zlib. The header of the compressed packet
+has the parameters of the `uncompress()` function in mind::
 
   ZEXTERN int ZEXPORT uncompress OF((Bytef *dest,   uLongf *destLen,
                                    const Bytef *source, uLong sourceLen));
 
-The compressed MySQL packet its own header which looks like::
+The compressed packet its own header which looks like::
 
-  compressed MySQL packet
+  compressed packet
     layout:
       3              length of compressed payload 
-      1              sequence id
+      1              compressed sequence id
       3              length of payload before compression
       n              compressed payload
 
@@ -295,30 +299,38 @@ The compressed packet is 41 bytes long and splits into::
   sequence id                 = 00       ->  0
   uncompressed payload length = 32 00 00 -> 50
 
-The `compressed payload length` is the `raw packet length` minus the size of the compressed packet header (7 bytes) itself. 
+_`length of compressed payload`
+  `raw packet length` minus the size of the compressed packet header (7 bytes) itself. 
 
-The `uncompressed payload length` is the size of `compressed payload` before it was compressed.
+_`compressed sequence id`
+  sequence id of the compressed packets, reset in same way as for the MySQL Packets, but incremented independently
 
-.. attention:: If `uncompressed payload length` is `0`, the `compressed payload` field contains the `uncompressed payload`_.
+_`length of payload before compression`
+  size of `compressed payload`_ before it was compressed.
 
-Mapping this back to the `uncompress` function we get:
+_`compressed payload`
+  payload compressed with zlib's deflate algorithm
+
+.. attention:: If `length of payload before compression`_ is `0`, the `compressed payload`_ field contains the `uncompressed payload`_.
+
+Mapping this back to the `uncompress()` function we get:
 
 dest
-  has to be at least `uncompressed payload length` long
+  has to be at least `length of payload before compression`_ long
 
 destLen
-  `uncompressed payload length`
+  `length of payload before compression`_
 
 source
-  `compressed payload`
+  `compressed payload`_
 
 sourceLen
-  `compressed payload length`
+  `length of compressed payload`_
 
 Using aboves example as input the code should look a bit like::
 
   const Bytef *src = "\x22\x00...";
-  const Bytef *comp_payload = src + 7;
+  const Bytef *comp_payload = src + 7; /* skip the compressed packet header */
   uLongf comp_payload_len = 34;
   uLongf dst_len = 50;
   Bytef *dst = malloc(dst_len);
@@ -335,9 +347,9 @@ Pretty printing `dst` results in::
 ... aka our uncompressed MySQL packet.
 
 More than one MySQL packet
-..........................
+--------------------------
 
-A compressed MySQL packet can contain several MySQL Packets.
+A compressed packet can contain several MySQL Packets.
 
 A `Text resultset`_ for ``SELECT repeat("a", 50)`` looks like::
 
@@ -350,7 +362,7 @@ A `Text resultset`_ for ``SELECT repeat("a", 50)`` looks like::
   61 61 61 61 61 61 61 61    61 61 61 61 61 61 05 00    aaaaaaaaaaaaaa..
   00 05 fe 00 00 02 00                                  .......         
 
-With `CLIENT_COMPRESS`_ on it is sent in one compressed MySQL packet::
+With `CLIENT_COMPRESS`_ on it is sent in one compressed packet::
 
   4a 00 00 01 77 00 00 78    9c 63 64 60 60 64 54 65    J...w..x.cd``dTe
   60 60 62 4e 49 4d 63 60    60 e0 2f 4a 2d 48 4d 2c    ``bNIMc``./J-HM,
@@ -371,11 +383,11 @@ Uncompressing it shows the same the uncompressed version::
   00 05 fe 00 00 02 00                                  .......
 
 Splitting MySQL Packets
-.......................
+-----------------------
 
-A MySQL packet may be split across several compressed MySQL packets.
+A MySQL packet may be split across several compressed packets.
 
-If look at the `Text resultset`_ for query like ``SELECT repeat("a", 256 * 256 * 256 - 5)`` it generate 6 MySQL Packets with the lengths and sequence-ids:
+If look at the `Text resultset`_ for query like ``SELECT repeat("a", 256 * 256 * 256 - 5)`` it generate 6 MySQL Packets with the lengths and sequence-ids::
 
   01 00 00 01
   36 00 00 02
@@ -384,7 +396,7 @@ If look at the `Text resultset`_ for query like ``SELECT repeat("a", 256 * 256 *
   00 00 00 05
   05 00 00 06
 
-If we would try to squeeze into one compressed packet the `uncompressed payload length` would be::
+If we would try to squeeze into one compressed packet the `length of payload before compression`_ would be::
 
   (0x01 + 4) +
   (0x36 + 4) +
@@ -394,7 +406,7 @@ If we would try to squeeze into one compressed packet the `uncompressed payload 
   (0x05 + 4)
   = 0x100005c
 
-which is too large for one compressed packet. Instead the server splits the packet stream into 3 compressed MySQL packets::
+which is too large for one compressed packet. Instead the server splits the packet stream into 3 compressed packets::
 
   6d 00 00 01 00 40 00 78    9c ed cb 31 0a c2 40 00    m....@.x...1..@.
   44 d1 59 a3 60 e1 1d 0c    a9 54 b4 11 92 fb 04 8c    D.Y.`....T......
@@ -405,7 +417,7 @@ which is too large for one compressed packet. Instead the server splits the pack
   00 00 00 00 00 00 00 00    00 00 00 00 00 fe f6 05    ................
   0c 60 37 dc                                           .`7.
 
-... a first packet containing the first 16kByte which is packet 01, 02, 03 and the start of packet 04. The rest of packet 04 is sent alone:: 
+... a first packet containing the first 16kByte (``00 40 00``) which is packet 01, 02, 03 and the start of packet 04. The rest of packet 04 is sent alone:: 
 
   af 3f 00 02 4b c0 ff 78    9c ec c1 81 00 00 00 00    .?..K..x........
   80 20 d6 fd 25 16 a9 0a    00 00 00 00 00 00 00 00    . ..%...........
@@ -418,9 +430,9 @@ which is too large for one compressed packet. Instead the server splits the pack
   00 00 02 00                                           ....
 
 Uncompressed payload
-.....................
+--------------------
 
-If the `uncompressed payload length` is `0` the `compressed payload` field contains the uncompressed payload.
+If the `length of payload before compression`_ is `0` the `compressed payload`_ field contains the uncompressed payload.
 
 .. hint:: Usually payloads less than 50 bytes (``MIN_COMPRESS_LENGTH``) aren't compressed.
 
@@ -435,6 +447,11 @@ decodes into::
   compressed payload length   = 0d 00 00 -> 13 (20 - 7)
   sequence id                 = 03       ->  3
   uncompressed payload length = 00 00 00 -> uncompressed
+
+... with the `uncompressed payload` starting right after the 7 byte header::
+
+  00 00 00 05                   -- a "empty" packet
+  05 00 00 06 fe 00 00 02 00    -- a EOF packet
 
 Generic Response Packets
 ========================
