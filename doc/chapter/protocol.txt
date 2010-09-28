@@ -101,25 +101,6 @@ For the prompt (\u ...) the mysql client also asks for the current username.::
 
 which is 'root@localhost' in this example.
 
-MySQL Packet header
--------------------
-
-The packets that are exchanged between client and server look like::
-
-  ...
-  T 127.0.0.1:51656 -> 127.0.0.1:3306 [AP]
-    01 00 00 00 01 
-
-The example shows a COM_QUIT packet. It starts (like all packets) with a 4 byte packet header:
-
-* 3 byte length
-* 1 byte sequence-id
-
-The length is the length of the payload of the packet. If the payload is larger than 2^24-2 bytes the length is set to 2^24-1
-and a additional packets are sent with the rest of the payload until the payload of a packet is less than 2^24-2 bytes.
-
-The sequence-id is incremented with each packet for a sequence of packets. It is reset, when a new command begins.
-
 Basic Types
 ===========
 
@@ -190,13 +171,13 @@ _`End-of-packet String`
 Describing packets
 ------------------
 
-In this document we describe the packets by first defining their payload and provide examples with packet header and payload as 
-you would see it on the wire.::
+In this document we describe each packet by first defining its ``payload`` and provide a ``example`` showing each `MySQL Packet` that is sent include the `Packet Header`_::
 
   <packetname>
     <description>
 
     direction: client -> server
+    response: <response>
     
     payload:
       <type>        <description>
@@ -227,6 +208,52 @@ n              a byte sequence of any length
   `Auth Response Packet`_.
 
 If a field has a fixed value its description will show it as hex value in brackets like `[00]`.
+
+MySQL Packet
+============
+
+If a MySQL Client or Server wants to send data it:
+
+* splits the data in chunks of (2^24-1) packets
+* each chunk is prepended with a packet header
+
+Packet Header
+-------------
+
+The packets that are exchanged between client and server look like::
+
+  ...
+  T 127.0.0.1:51656 -> 127.0.0.1:3306 [AP]
+    01 00 00 00 01 
+
+The example shows a `COM_QUIT`_ packet. It starts (like all packets) with a 4 byte packet header:
+
+* 3 byte payload length
+* 1 byte sequence-id
+
+::
+
+  MySQL packet
+    layout:
+      3              payload length
+      1              sequence id
+      n              payload 
+
+sending more than 16Mbyte
+.........................
+
+If the payload is larger than or equal to 2^24-1 bytes the length is set to 2^24-1 (``ff ff ff``) and a additional packets are sent
+with the rest of the payload until the payload of a packet is less than 2^24-1 bytes.
+
+Sending a payload of 16 777 215 (2^16-1) bytes looks like::
+
+  ff ff ff 00 ...
+  00 00 00 01
+
+Sequence ID
+........... 
+
+The sequence-id is incremented with each packet and may wrap around. It starts at 0 and is reset to 0 when a new command begins in `the Command Phase`_.
 
 Generic Response Packets
 ========================
