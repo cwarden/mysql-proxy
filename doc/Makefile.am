@@ -1,3 +1,5 @@
+RST2HTML_FLAGS=--rfc-references 
+
 SUBDIRS=chapter
 
 EXTRA_DIST = \
@@ -21,11 +23,11 @@ html-local: book.html protocol.html scripting.html
 
 ## we use http://docutils.sourceforge.net/rst.html to generate the docs
 book.html: book.txt chapter/scripting.txt chapter/protocol.txt
-	${RST2HTML} $< $@
+	${RST2HTML} ${RST2HTML_FLAGS} $< $@
 
 protocol.html: protocol.txt chapter/protocol.txt
-	${RST2HTML} $< $@
+	${RST2HTML} ${RST2HTML_FLAGS} $< $@
 
 scripting.html: scripting.txt chapter/scripting.txt
-	${RST2HTML} $< $@
+	${RST2HTML} ${RST2HTML_FLAGS} $< $@
 
