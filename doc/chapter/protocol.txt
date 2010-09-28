@@ -1134,8 +1134,8 @@ Example::
 Binary Protocol Resultset Row
 -----------------------------
 
-A Binary Protocol Resultset Row is made up of the bit-mask containing as many bits as we have columns in the
-resultset + 2 and the values for columns that are not NULL in the `Binary Protocol Value`_ format.
+A Binary Protocol Resultset Row is made up of the ``NULL bitmap`` containing as many bits as we have columns in the
+resultset + 2 and the ``values`` for columns that are not NULL in the `Binary Protocol Value`_ format.
 
 ::
 
@@ -1144,11 +1144,58 @@ resultset + 2 and the values for columns that are not NULL in the `Binary Protoc
 
     payload:
       1              packet header [00]
-      n              nul-bit-mask if length (column-count + 7 + 2) / 8
+      n              NULL-bitmap, length: (column-count + 7 + 2) / 8
       n              values
 
     example:
       09 00 00 04 00 00 06 66 6f 6f 62 61 72
+
+NULL-bitmap
+...........
+
+The binary protocol sends NULL values as bits inside a bitmap instead of a full byte as the `Text Resultset Row`_. If many NULL values 
+are sent, it is more efficient than the old way.
+
+.. attention::
+  For the `Binary Protocol Resultset Row`_ the ``num-fields`` and the ``field-pos`` need to add a offset of 2. For `COM_STMT_EXECUTE`_ this 
+  offset is 0.
+  
+The NULL-bitmap needs enough space to store a possible NULL bit for each column that is sent. Its space is
+calculated with::
+
+  NULL-bitmap-bytes = (num-fields + 7 + offset) / 8
+
+resulting in:
+
+================= =================
+num-fields+offset NULL-bitmap-bytes
+================= =================
+0                 0
+1                 1
+[...]             [...]
+8                 1
+9                 2
+[...]             [...]
+================= =================
+
+To store a NULL bit in the bitmap, you need to calculate the bitmap-byte (starting with 0) and the bitpos (starting with 0) in that byte from the field-index (starting with 0)::
+
+  NULL-bitmap-byte = ((field-pos + offset) / 8)
+  NULL-bitmap-bit  = ((field-pos + offset) % 8)  
+
+Example::
+
+  Resultset Row, 9 fields, 9th field is a NULL (9th field -> field-index == 8, offset == 2)
+   
+  nulls -> [00] [00]
+  
+  byte_pos = (10 / 8) = 1
+  bit_pos  = (10 % 8) = 2
+ 
+  nulls[byte_pos] |= 1 << bit_pos
+  nulls[1] |= 1 << 2;
+  
+  nulls -> [00] [04]
 
 Binary Protocol Value 
 ----------------------
@@ -1365,7 +1412,7 @@ The server returns a `COM_STMT_EXECUTE Response`_.
       1              flags
       4              iteration-count
         if num-params > 0:
-      n              nul-bit-map, length: (num-params+7)/8
+      n              NULL-bitmap, length: (num-params+7)/8
       1              new-params-bound-flag
         if new-params-bound-flag == 1:
       n              type of each parameter, length: num-params * 2
@@ -1388,6 +1435,7 @@ flags constant name
 0x04  CURSOR_TYPE_SCROLLABLE
 ===== =============
 
+``NULL-bitmap`` is like `NULL-bitmap`_ for the `Binary Protocol Resultset Row`_ just that it has a bit-offset of 0.
 
 COM_STMT_EXECUTE Response
 .........................
