@@ -4,6 +4,17 @@ The MySQL protocol is used between the MySQL Clients and the MySQL Server. It is
 * MySQL Proxy
 * the MySQL Server itself for the slaves
 
+It supports:
+
+* transparent encryption via `SSL`_
+* transparent compression via `Compressed Packet`_
+* a challenge-response `Auth Phase`_ do never send the clients password in cleartext
+* and a `Command Phase`_ which supports needs of `Prepared Statements`_ and `Stored Procedures`_
+
+
+Documentation
+=============
+
 The documentation is sparse and is split between:
 
   http://forge.mysql.com/wiki/MySQL_Internals_ClientServer_Protocol
@@ -253,7 +264,7 @@ Sending a payload of 16 777 215 (2^16-1) bytes looks like::
 Sequence ID
 ........... 
 
-The sequence-id is incremented with each packet and may wrap around. It starts at 0 and is reset to 0 when a new command begins in `the Command Phase`_.
+The sequence-id is incremented with each packet and may wrap around. It starts at 0 and is reset to 0 when a new command begins in the `Command Phase`_.
 
 Compressed Packet
 =================
@@ -262,7 +273,7 @@ Compression is extension to the MySQL Protocol, is transparent to the rest of th
 The maximum size of a chunk to compress is 16Mbyte.
 
 It is enabled if the server announces `CLIENT_COMPRESS`_ in its `Auth Challenge Packet`_ and the clients requests it too in its `Auth Response Packet`_. It is used
-only in the `the Command Phase`_.
+only in the `Command Phase`_.
 
 It uses the `deflate` algorithm as defined in RFC 1951 and implemented in zlib. The header of the compressed packet
 has the parameters of the `uncompress()` function in mind::
@@ -453,6 +464,53 @@ decodes into::
   00 00 00 05                   -- a "empty" packet
   05 00 00 06 fe 00 00 02 00    -- a EOF packet
 
+SSL
+===
+
+The MySQL Protocol also supports encryption and authentication via SSL. The encryption is transparent to
+the rest of the protocol and is applied after the data is compressed right before the data is written
+to the network layer.
+
+The SSL suppport is announced in
+`Auth Challenge Packet`_ sent by the server via `CLIENT_SSL`_ and is enabled if the client returns the same
+capability.
+
+For a unencrypted connection the server starts with its `Auth Challenge Packet`_::
+
+  36 00 00 00 0a 35 2e 35    2e 32 2d 6d 32 00 52 00    6....5.5.2-m2.R.
+  00 00 22 3d 4e 50 29 75    39 56 00 ff ff 08 02 00    .."=NP)u9V......
+  00 00 00 00 00 00 00 00    00 00 00 00 00 29 64 40    .............)d@
+  52 5c 55 78 7a 7c 21 29    4b 00                      R\Uxz|!)K.      
+
+... and the client returns its `Auth Response Packet`_::
+
+  3a 00 00 01 05 a6 03 00    00 00 00 01 08 00 00 00    :...............
+  00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00    ................
+  00 00 00 00 72 6f 6f 74    00 14 14 63 6b 70 99 8a    ....root...ckp..
+  b6 9e 96 87 a2 30 9a 40    67 2b 83 38 85 4b          .....0.@g+.8.K
+
+If client wants to do SSL and the server supports it, it would send a shortened `Auth Response Packet`_
+with the `CLIENT_SSL`_ capability enabled instead::
+
+  20 00 00 01 05 ae 03 00    00 00 00 01 08 00 00 00     ...............
+  00 00 00 00 00 00 00 00    00 00 00 00 00 00 00 00    ................
+  00 00 00 00                                           ....            
+
+The `Auth Response Packet`_ is truncated right before the `username` field. The rest of the communication
+is switch to SSL::
+
+  16 03 01 00 5e 01 00 00    5a 03 01 4c a3 49 2e 7a    ....^...Z..L.I.z
+  b5 06 75 68 5c 30 36 73    f1 82 79 70 58 4c 64 bb    ..uh\06s..ypXLd.
+  47 7e 90 cd 9b 30 c5 66    65 da 35 00 00 2c 00 39    G~...0.fe.5..,.9
+  00 38 00 35 00 16 00 13    00 0a 00 33 00 32 00 2f    .8.5.......3.2./
+  00 9a 00 99 00 96 00 05    00 04 00 15 00 12 00 09    ................
+  00 14 00 11 00 08 00 06    00 03 02 01 00 00 04 00    ................
+  23 00 00                                              #..
+
+The above packet is from `SSL_connect()` which does the SSL greeting and certificate exchange. Once the SSL
+tunnel is established, the client sends the _full_ `Auth Response Packet`_ again and the normal communication
+continues.
+
 Generic Response Packets
 ========================
 
@@ -526,8 +584,8 @@ ERR packet
       74 61 62 6c 65 73 20 75    73 65 64                   tables used 
 
 
-The Auth Phase
-==============
+Auth Phase
+==========
 
 A simple MySQL 4.1+ auth starts with:
 
@@ -616,7 +674,7 @@ flags    constant name                   description
 0x0100 CLIENT_IGNORE_SPACE             Ignore spaces before '('
 0x0200 _`CLIENT_PROTOCOL_41`           New 4.1 protocol
 0x0400 CLIENT_INTERACTIVE              This is an interactive client
-0x0800 CLIENT_SSL                      Switch to SSL after handshake
+0x0800 _`CLIENT_SSL`                   Switch to SSL after handshake
 0x1000 CLIENT_IGNORE_SIGPIPE           IGNORE sigpipes
 0x2000 CLIENT_TRANSACTIONS             Client knows about transactions
 0x4000 CLIENT_RESERVED                 Old flag for 4.1 protocol 
@@ -705,8 +763,8 @@ Old Password Auth Response Packet
   
 
 
-The Command Phase
-=================
+Command Phase
+=============
 
 In the command phase the client sends a command packet with the sequence-id [00]::
 
