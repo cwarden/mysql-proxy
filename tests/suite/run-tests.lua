@@ -234,6 +234,7 @@ function MySQLProxy:get_args(opts)
 	opts["daemon"]       = true
 	opts["lua-path"]     = self.testenv.lua_path
 	opts["lua-cpath"]    = self.testenv.lua_cpath
+	opts["log-file"]     = ("%s/mysql-proxy.log"):format(self.testenv.basedir)
 
 	opts["proxy-backend-addresses"] = self.backends
 
@@ -456,8 +457,9 @@ function MySQLProxyTest:run_test()
 	local result = 0
 
 	local proc = process:new()
-	local ret = proc:popen(
-		self.testenv.MYSQL_TEST_BIN,
+	local ret
+	local is_success, ret = pcall(proc.popen, proc,
+		"/etc",
 		{
 			['MYSQL_USER']      = self.testenv.MYSQL_USER,
 			['MYSQL_PASSWORD']  = self.testenv.MYSQL_PASSWORD,
@@ -478,6 +480,11 @@ function MySQLProxyTest:run_test()
 			["result-file"] = self.suite_srcdir .. "/r/" .. self.testname .. ".result",
 			["logdir"]      = self.suite_builddir, -- the .result dir might not be writable
 		})
+
+	if not is_success then
+		print(("not ok # %s - %s"):format(self.testname, ret))
+		return -1
+	end
 
 	if (ret == "ok") then
 		print(("ok # %s"):format(self.testname))
