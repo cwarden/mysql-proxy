@@ -591,6 +591,63 @@ The ERR packet contains a SQL-state if `CLIENT_PROTOCOL_41`_ is enabled.
       17 00 00 01 ff 48 04 23    48 59 30 30 30 4e 6f 20    .....H.#HY000No 
       74 61 62 6c 65 73 20 75    73 65 64                   tables used 
 
+Character Set
+=============
+
+MySQL has a very flexible character set support as documented in:
+
+  http://dev.mysql.com/doc/refman/5.1/en/charset.html
+
+The list of character sets the server knows can be queried with ``SHOW CHARACTER SET``. Its numeric identifiers 
+are used in the protocol in several places. They are only defined in the source code of the MySQL Server and Client lib and
+can be extracted with::
+
+  $ cat all-charsets.c
+  #include <stdio.h>
+  
+  #include <my_global.h>
+  #include <my_config.h>
+  #include <my_sys.h>
+  
+  int main() {
+          CHARSET_INFO **cs;
+  
+          get_collation_number("binary"); /* just trigger a init_available_charsets */
+  
+          for (cs=all_charsets;
+               cs < all_charsets+array_elements(all_charsets)-1;
+               cs++) {
+                  if (*cs) {
+			  printf("%-6d %02x  %s\n", (*cs)->number, (*cs)->number, (*cs)->name);
+                  }
+          }
+  
+          return 0;
+  }
+  $ gcc ./all-charsets.c -o all-charsets `mysql_config --libs --cflags` && ./all-charsets
+  1      0x01 big5_chinese_ci
+  2      0x02 latin2_czech_cs
+  3      0x03 dec8_swedish_ci
+  4      0x04 cp850_general_ci
+  5      0x05 latin1_german1_ci
+  6      0x06 hp8_english_ci
+  7      0x07 koi8r_general_ci
+  8      0x08 latin1_swedish_ci
+  ...
+
+A few common ones are:
+
+====== ==== ==================
+number hex  character set name
+====== ==== ==================
+[...] 
+8      0x08 latin1_swedish_ci
+[...] 
+33     0x21 utf8_general_ci
+[...] 
+63     0x3f binary
+[...]
+====== ==== ==================
 
 Auth Phase
 ==========
@@ -661,6 +718,8 @@ The client answers with a `Auth Response Packet`_.
       7c 63 5a 77 6b 34 5e 5d    3a 00                      |cZwk4^]:.      
 
 `status flags` is defined as the `Status Flags`_ of the `OK packet`_.
+
+`character set` is the server's default character set and is defined in `Character Set`_.
 
 Capability flags
 ................
@@ -738,7 +797,7 @@ flags      constant name                   description
 0x80000000 CLIENT_REMEMBER_OPTIONS
 ========== ==============================  ==================================
 
-
+`character set` is the connection's default character set and is defined in `Character Set`_.
 
 Old Password Auth Challenge Packet
 ----------------------------------
@@ -1044,6 +1103,8 @@ If the PROTOCOL_41 capability is set::
       2              flags
       1              decimals
       2              filler [00] [00]
+
+`character set` is the column character set and is defined in `Character Set`_.
 
 If not ::
 
@@ -1387,6 +1448,8 @@ COM_CHANGE_USER changes the user of the current connection and reset the connect
       string         schema-name
         if more bytes in packet:
       2              character-set
+
+`character set` is the connection character set and is defined in `Character Set`_.
 
 Prepared Statements
 ===================
