@@ -598,42 +598,23 @@ MySQL has a very flexible character set support as documented in:
 
   http://dev.mysql.com/doc/refman/5.1/en/charset.html
 
-The list of character sets the server knows can be queried with ``SHOW CHARACTER SET``. Its numeric identifiers 
-are used in the protocol in several places. They are only defined in the source code of the MySQL Server and Client lib and
-can be extracted with::
+The list of character sets and their IDs can be queried with::
 
-  $ cat all-charsets.c
-  #include <stdio.h>
-  
-  #include <my_global.h>
-  #include <my_config.h>
-  #include <my_sys.h>
-  
-  int main() {
-          CHARSET_INFO **cs;
-  
-          get_collation_number("binary"); /* just trigger a init_available_charsets */
-  
-          for (cs=all_charsets;
-               cs < all_charsets+array_elements(all_charsets)-1;
-               cs++) {
-                  if (*cs) {
-			  printf("%-6d %02x  %s\n", (*cs)->number, (*cs)->number, (*cs)->name);
-                  }
-          }
-  
-          return 0;
-  }
-  $ gcc ./all-charsets.c -o all-charsets `mysql_config --libs --cflags` && ./all-charsets
-  1      0x01 big5_chinese_ci
-  2      0x02 latin2_czech_cs
-  3      0x03 dec8_swedish_ci
-  4      0x04 cp850_general_ci
-  5      0x05 latin1_german1_ci
-  6      0x06 hp8_english_ci
-  7      0x07 koi8r_general_ci
-  8      0x08 latin1_swedish_ci
-  ...
+  SELECT id, collation_name FROM information_schema.collations ORDER BY id;
+  +----+-------------------+
+  | id | collation_name    |
+  +----+-------------------+
+  |  1 | big5_chinese_ci   |
+  |  2 | latin2_czech_cs   |
+  |  3 | dec8_swedish_ci   |
+  |  4 | cp850_general_ci  |
+  |  5 | latin1_german1_ci |
+  |  6 | hp8_english_ci    |
+  |  7 | koi8r_general_ci  |
+  |  8 | latin1_swedish_ci |
+  |  9 | latin2_general_ci |
+  | 10 | swe7_swedish_ci   |
+  +----+-------------------+
 
 A few common ones are:
 
