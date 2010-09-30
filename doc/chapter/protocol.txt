@@ -8,7 +8,7 @@ It supports:
 
 * transparent encryption via `SSL`_
 * transparent compression via `Compressed Packet`_
-* a challenge-response `Auth Phase`_ do never send the clients password in cleartext
+* a challenge-response `Auth Phase`_ to never send the clients password in cleartext
 * and a `Command Phase`_ which supports needs of `Prepared Statements`_ and `Stored Procedures`_
 
 
@@ -40,15 +40,14 @@ and the source files of the MySQL Server:
 
 * sql/protocol.cc for the value and type encoding
 
-Tracking the MySQL Protocol
-===========================
-
-All the examples here are captured with::
-
-  $ ngrep -x -q -d lo0 '' 'port 3306'
-
 A mysql client logs in
-----------------------
+======================
+
+.. hint::
+  All the examples here are captured with::
+
+    $ ngrep -x -q -d lo0 '' 'port 3306'
+
 
 Taking a look at the packet dump when a mysql-client logs in::
 
@@ -115,6 +114,11 @@ which is 'root@localhost' in this example.
 Basic Types
 ===========
 
+The protocol has a few very basic types that are used throughout the protocol:
+
+* integers and
+* strings
+
 Integer
 -------
 
@@ -165,7 +169,7 @@ They also send least significant byte first.
 String
 ------
 
-Strings appear in a few forms in the protocol:
+Strings are sequences of bytes and appear in a few forms in the protocol:
 
 _`Fixed Length String`
   Fixed length strings have a known, hardcoded length. An example is the `sql-state` of the `ERR packet`_ which is always 5 byte long.
@@ -226,7 +230,7 @@ MySQL Packet
 If a MySQL Client or Server wants to send data it:
 
 * splits the data in chunks of (2^24-1) packets
-* each chunk is prepended with a packet header
+* each chunk is prepended with a `packet header`_
 
 Packet Header
 -------------
@@ -522,6 +526,8 @@ For most of the commands the client sends to the server one of two packets is re
 OK packet
 ---------
 
+The payload of the OK packet contains a warning count if `CLIENT_PROTOCOL_41`_ is enabled.
+
 ::
 
   OK
@@ -533,7 +539,7 @@ OK packet
       lenenc-int     affected rows
       lenenc-int     last-insert-id
       2              status flags
-        if capabilities & PROTOCOL_41:
+        if capabilities & CLIENT_PROTOCOL_41:
       2              warnings 
 
     example:
@@ -564,6 +570,8 @@ flag   constant name
 ERR packet
 ----------
 
+The ERR packet contains a SQL-state if `CLIENT_PROTOCOL_41`_ is enabled.
+
 ::
 
   ERR
@@ -573,7 +581,7 @@ ERR packet
     payload:
       1              [ff] the ERR header
       2              error code 
-        if capabilities & PROTOCOL_41:
+        if capabilities & CLIENT_PROTOCOL_41:
       1              '#' the sql-state marker
       string[5]      sql-state
         all protocols:
@@ -715,6 +723,8 @@ If not, it is::
       3              max-packet size
       string         username
       string         auth-response
+
+If `CLIENT_SSL`_ is set the `Auth Response Packet`_ is looking slightly differently, see `SSL`_.
 
 `capability flags` are the same as defined in the `Capability flags`_ of the `Auth Challenge Packet`_ plus:
 
@@ -1067,6 +1077,8 @@ If a field is NULL `0xfb` is sent as described in `length encoded integer`_.
 EOF packet
 ,,,,,,,,,,
 
+If `CLIENT_PROTOCOL_41`_ is enabled the EOF packet will contain a warning count and status flags.
+
 ::
 
   EOF
@@ -1075,7 +1087,7 @@ EOF packet
 
     payload:
       1              [fe] the EOF header
-        if capabilities & PROTOCOL_41:
+        if capabilities & CLIENT_PROTOCOL_41:
       2              warning count
       2              status flags
 
