@@ -25,9 +25,6 @@ lua_runner_CFLAGS=${LUA_CFLAGS}
 
 EXTRA_DIST=\
 	run-tests.lua \
-	fileutils.lua \
-	shellutils.lua \
-	testutils.lua \
 	lua-tests-wrapper.sh.in \
 	CMakeLists.txt
 
