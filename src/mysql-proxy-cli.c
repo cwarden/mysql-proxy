@@ -310,10 +310,6 @@ int main_cmdline(int argc, char **argv) {
 	g_log_set_default_handler(chassis_log_func, log);
 
 #ifdef _WIN32
-	if (chassis_win32_is_service() && chassis_log_set_event_log(log, g_get_prgname())) {
-		GOTO_EXIT(EXIT_FAILURE);
-	}
-
 	if (chassis_frontend_init_win32()) { /* setup winsock */
 		GOTO_EXIT(EXIT_FAILURE);
 	}
@@ -492,6 +488,10 @@ int main_cmdline(int argc, char **argv) {
 			backend = chassis_log_backend_file_new(frontend->log_filename);
 		} else if (frontend->use_syslog) {
 			backend = chassis_log_backend_syslog_new();
+#ifdef _WIN32
+		} else if (chassis_win32_is_service()) {
+			backend = chassis_log_backend_eventlog_new();
+#endif
 		} else {
 			backend = chassis_log_backend_stderr_new();
 		}
