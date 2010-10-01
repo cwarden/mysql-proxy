@@ -5,7 +5,8 @@
 #include <time.h> /* for time_t */
 
 #ifndef _WIN32
-#include <unistd.h> /* pid_t, gid_t */
+#include <sys/types.h> 
+#include <unistd.h>    /* should bring in uid_t and gid_t ... but Linux wants <sys/types.h> too */
 #endif
 
 #include "chassis-exports.h"
