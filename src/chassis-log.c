@@ -31,7 +31,6 @@
 #else
 #include <windows.h>
 #include <io.h>
-#define STDERR_FILENO 2
 #endif
 #include <glib.h>
 

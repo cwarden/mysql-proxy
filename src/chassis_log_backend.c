@@ -13,6 +13,7 @@
 #else
 #include <windows.h>
 #include <io.h>
+#define STDERR_FILENO 2
 #endif
 
 #ifdef HAVE_SYSLOG_H
@@ -101,7 +102,7 @@ int chassis_log_backend_syslog_init(chassis_log_backend_t *backend) {
 #ifdef _WIN32
 
 void chassis_log_backend_eventlog_log(chassis_log_backend_t* backend, GLogLevelFlags level, const gchar *message, gsize len) {
-	char *log_messages[1];
+	const char *log_messages[1];
 	int win_evtype;
 
 	if (level && (G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL)) {
@@ -116,7 +117,7 @@ void chassis_log_backend_eventlog_log(chassis_log_backend_t* backend, GLogLevelF
 	}
 
 	log_messages[0] = message;
-	ReportEvent(log->event_source_handle,
+	ReportEvent(backend->event_source_handle,
 				win_evtype,
 				0, /* category, we don't have that yet */
 				win_evtype, /* event indentifier, one of MSG_ERROR (0x01), MSG_WARNING(0x02), MSG_INFO(0x04) */
@@ -128,25 +129,27 @@ void chassis_log_backend_eventlog_log(chassis_log_backend_t* backend, GLogLevelF
 }
 
 gboolean chassis_log_backend_eventlog_open(chassis_log_backend_t* backend, GError **error) {
-	backend->use_windows_applog = TRUE;
+	const char *app_name = g_get_prgname();
+
 	backend->event_source_handle = RegisterEventSource(NULL, app_name);
 
 	if (NULL == backend->event_source_handle) {
 		int err = GetLastError();
 
-		g_critical("%s: RegisterEventSource(NULL, %s) failed: %s (%d)",
+		g_set_error(error, chassis_log_error(), CHASSIS_LOG_ERROR_OPEN,
+				"%s: RegisterEventSource(NULL, %s) failed: %s (%d)",
 				G_STRLOC,
 				app_name,
 				g_strerror(err),
 				err);
 
-		return -1;
+		return FALSE;
 	}
 
-	return 0;
+	return TRUE;
 }
 
-gboolean chassis_log_backend_event_close(chassis_log_backend_t* backend, GError **error) {
+gboolean chassis_log_backend_eventlog_close(chassis_log_backend_t* backend, GError **error) {
 	if (NULL != backend->event_source_handle) {
 		if (!DeregisterEventSource(backend->event_source_handle)) {
 			int err = GetLastError();
@@ -165,8 +168,8 @@ gboolean chassis_log_backend_event_close(chassis_log_backend_t* backend, GError 
 
 int chassis_log_backend_eventlog_init(chassis_log_backend_t G_GNUC_UNUSED *backend) {
 #ifdef _WIN32
-	backend->open_func = NULL;
-	backend->close_func = chassis_log_backend_event_close;
+	backend->open_func = chassis_log_backend_eventlog_open;
+	backend->close_func = chassis_log_backend_eventlog_close;
 	backend->log_func = chassis_log_backend_eventlog_log;
 	backend->needs_timestamp = FALSE;
 	backend->needs_compress = FALSE;
