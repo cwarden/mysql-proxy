@@ -47,9 +47,11 @@ static void chassis_log_backend_update_timestamp(chassis_log_backend_t *backend)
 	GTimeVal tv;
 	struct tm *tm;
 	GString *s = backend->log_str;
+	time_t secs;
 
 	g_get_current_time(&tv);
-	tm = localtime(&(tv.tv_sec));
+	secs = tv.tv_sec;
+	tm = localtime(&(secs));
 	s->len = strftime(s->str, s->allocated_len, "%Y-%m-%d %H:%M:%S", tm);
 	if (backend->log_ts_resolution == CHASSIS_LOG_BACKEND_RESOLUTION_MS) {
 		g_string_append_printf(s, ".%.3d", (int) tv.tv_usec/1000);
