@@ -248,13 +248,15 @@ static void network_socket_tune_keepalive(network_socket *sock) {
 	 */
 	os.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
 	if (GetVersionEx(&os) == 0) {
-		g_critical("cannot get windows OS version info, using default for Vista");
-		keepalive_probe_count = VISTA_KEEPALIVE_COUNT;
+		g_critical("%s: cannot get windows OS version info, using default for Vista",
+				G_STRLOC);
+		return;
 	} else {
-		if (os.dwMajorVersion >= 6)
+		if (os.dwMajorVersion >= 6) {
 			keepalive_probe_count = VISTA_KEEPALIVE_COUNT;
-		else
+		} else {
 			keepalive_probe_count = W2K_KEEPALIVE_COUNT;
+		}
 	}
 			
 	keep.onoff = 1;
@@ -262,7 +264,7 @@ static void network_socket_tune_keepalive(network_socket *sock) {
 	keep.keepaliveinterval = CHAS_NET_KEEPALIVE_ABORT / keepalive_probe_count;
 
 	if (WSAIoctl(
-		(socket) s,
+		(SOCKET) s,
 		SIO_KEEPALIVE_VALS,
 		(LPVOID) &keep,
 		(DWORD) sizeof(keep),
@@ -270,12 +272,11 @@ static void network_socket_tune_keepalive(network_socket *sock) {
 		0,						/* size of output buffer */
 		&dummy,					/* number of bytes returned */
 		NULL,					/* OVERLAPPED structure */
-		NULL,					/* completion routine */
-		NULL,					/* a WSATHREADID structure */
-		NULL					/* a pointer to the error code. */
-	) != 0)
+		NULL					/* completion routine */
+	) != 0) {
 		g_critical("%s: WSAIoctl(..SIO_KEEPALIVE_VALS...) failed: %d", 
 				G_STRLOC, WSAGetLastError());
+	}
 
 #else /* WIN32 */
 	unsigned int val;
