@@ -41,6 +41,7 @@ SET(chassis_sources
 	chassis-plugin.c
 	chassis-event-thread.c
 	chassis-log.c
+	chassis-log-config.c
 	chassis_log_backend.c
 	chassis_log_domain.c
 	chassis_log_error.c
