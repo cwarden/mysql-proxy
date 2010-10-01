@@ -459,7 +459,7 @@ function MySQLProxyTest:run_test()
 	local proc = process:new()
 	local ret
 	local is_success, ret = pcall(proc.popen, proc,
-		"/etc",
+		self.testenv.MYSQL_TEST_BIN,
 		{
 			['MYSQL_USER']      = self.testenv.MYSQL_USER,
 			['MYSQL_PASSWORD']  = self.testenv.MYSQL_PASSWORD,
