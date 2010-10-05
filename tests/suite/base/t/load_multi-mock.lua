@@ -115,7 +115,7 @@ function read_query(packet)
 
 	proxy.response = {
 		type = proxy.MYSQLD_PACKET_ERR,
-		errmsg = ''..query..''
+		errmsg = '(load_multi-mock.lua) don\'t know how to handle query: '..query
 	}
 	
 	return proxy.PROXY_SEND_RESULT
