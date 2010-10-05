@@ -234,7 +234,7 @@ function MySQLProxy:get_args(opts)
 	opts["daemon"]       = true
 	opts["lua-path"]     = self.testenv.lua_path
 	opts["lua-cpath"]    = self.testenv.lua_cpath
-	opts["log-file"]     = ("%s/mysql-proxy.log"):format(self.testenv.basedir)
+	opts["log-file"]     = opts["log-file"] or ("%s/mysql-proxy.log"):format(self.testenv.basedir)
 
 	opts["proxy-backend-addresses"] = self.backends
 
@@ -320,7 +320,7 @@ end
 -- * starting MySQL Proxies before starting mysqltest
 --
 -- inherited from Test
-MySQLProxyTest = Test:new()
+MySQLProxyTest = Test:new({})
 
 ---
 -- 'test_self' is a hack to pass down the object we test right now to chain_proxy().
@@ -349,8 +349,14 @@ function chain_proxy(backend_filenames, script_filename)
 		local mock_args = mock:get_args({
 			["proxy-lua-script"] = ("%s/t/%s"):format(self.suite_srcdir, backend_filename),
 			["proxy-address"]    = ("%s:%d"):format(self.testenv.PROXY_HOST, port),
-			["pid-file"]         = ("%s/chain-%d.pid"):format(self.testenv.basedir, backend_ndx)
+			["pid-file"]         = ("%s/chain-%d.pid"):format(self.testenv.basedir, backend_ndx),
+			["log-file"]         = ("%s/chain-%d.log"):format(self.testenv.basedir, backend_ndx),
 		})
+		if mock_args["log-file"] then
+			-- truncate the file
+			fileutils.create_empty_file(mock_args["log-file"])
+			self.log_files[#self.log_files + 1] = mock_args["log-file"]
+		end
 
 		local proc  = process:new()
 		local ret = proc:execute(mock:get_command(),
@@ -385,6 +391,12 @@ function chain_proxy(backend_filenames, script_filename)
 		["proxy-lua-script"] = script_filename,
 	})
 
+	if proxy_args["log-file"] then
+		-- truncate the file
+		fileutils.create_empty_file(proxy_args["log-file"])
+		self.log_files[#self.log_files + 1] = proxy_args["log-file"]
+	end
+
 	local proc  = process:new()
 	local ret = proc:execute(proxy:get_command(),
 		proxy:get_env(),
@@ -392,6 +404,7 @@ function chain_proxy(backend_filenames, script_filename)
 	if ret ~= 0 then
 		return false, ""
 	end
+
 	if proxy_args["pid-file"] then
 		local is_running, errmsg = proc:wait_running(proxy_args["pid-file"])
 		if not is_running then
@@ -409,6 +422,12 @@ function MySQLProxyTest:start_proxy(script_filename)
 		["proxy-lua-script"] = script_filename,
 	})
 
+	if proxy_args["log-file"] then
+		-- truncate the file
+		fileutils.create_empty_file(proxy_args["log-file"])
+		self.log_files[#self.log_files + 1] = proxy_args["log-file"]
+	end
+
 	local proc  = process:new()
 	local ret = proc:execute(proxy:get_command(),
 		proxy:get_env(),
@@ -416,6 +435,7 @@ function MySQLProxyTest:start_proxy(script_filename)
 	if ret ~= 0 then
 		return false, ""
 	end
+
 	if proxy_args["pid-file"] then
 		local is_running, errmsg = proc:wait_running(proxy_args["pid-file"])
 		if not is_running then
@@ -431,6 +451,8 @@ function MySQLProxyTest:setup()
 	local options_filename = ("%s/t/%s.options"):format(self.suite_srcdir, self.testname)
 	local has_script_file = fileutils.file_exists(script_filename)
 	local has_options_file = fileutils.file_exists(options_filename)
+
+	self.log_files = {}
 
 	-- if we have a options file, run it as part of the setup phases
 	-- if not, assume that we want to start a proxy with the script_filename
@@ -497,6 +519,23 @@ function MySQLProxyTest:run_test()
 		return -1
 	end
 end
+
+function MySQLProxyTest:teardown()
+	-- if we have a log-file written, paste it now
+	print("### dumping logs")
+	for ndx, log_file in ipairs(self.log_files) do
+		local f = io.open(log_file)
+		-- prefix all lines with # to make the compatible with the test-output
+		print("## " .. log_file)
+		for line in f:lines() do
+			print("# " .. line)
+		end
+
+		f:close()
+	end
+
+end
+
 
 local runner = TestRunner:new()
 runner:register_tests({"base"})
