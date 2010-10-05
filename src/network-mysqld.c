@@ -1090,7 +1090,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 				break;
 			case NETWORK_SOCKET_WAIT_FOR_EVENT:
 				/* call us again when you have a event */
-				WAIT_FOR_EVENT(con->server, EV_READ, NULL);
+				WAIT_FOR_EVENT(con->server, EV_READ, 0);
 				NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::read_handshake");
 
 				return;
@@ -1616,7 +1616,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 					break;
 				case NETWORK_SOCKET_WAIT_FOR_EVENT:
 					/* call us again when you have a event */
-					WAIT_FOR_EVENT(recv_sock, EV_READ, NULL);
+					WAIT_FOR_EVENT(recv_sock, EV_READ, 0);
 					NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::read_load_infile_data");
 
 					return;
@@ -1653,7 +1653,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 			case NETWORK_SOCKET_SUCCESS:
 				break;
 			case NETWORK_SOCKET_WAIT_FOR_EVENT:
-				WAIT_FOR_EVENT(con->server, EV_WRITE, NULL);
+				WAIT_FOR_EVENT(con->server, EV_WRITE, 0);
 				NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::send_load_infile_data");
 				
 				return;
@@ -1695,7 +1695,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 				break;
 			case NETWORK_SOCKET_WAIT_FOR_EVENT:
 				/* call us again when you have a event */
-				WAIT_FOR_EVENT(recv_sock, EV_READ, NULL);
+				WAIT_FOR_EVENT(recv_sock, EV_READ, 0);
 				NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::read_load_infile_result");
 
 				return;
@@ -1732,7 +1732,7 @@ void network_mysqld_con_handle(int event_fd, short events, void *user_data) {
 			case NETWORK_SOCKET_SUCCESS:
 				break;
 			case NETWORK_SOCKET_WAIT_FOR_EVENT:
-				WAIT_FOR_EVENT(con->client, EV_WRITE, NULL);
+				WAIT_FOR_EVENT(con->client, EV_WRITE, 0);
 				NETWORK_MYSQLD_CON_TRACK_TIME(con, "wait_for_event::send_load_infile_result");
 				
 				return;
