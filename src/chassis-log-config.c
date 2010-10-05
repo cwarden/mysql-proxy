@@ -28,7 +28,7 @@
 
 gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GError **gerr) {
 	GKeyFile *config = g_key_file_new();
-	gchar **keys, **groups;
+	gchar **keys = NULL, **groups;
 	gsize keys_count, groups_count;
 	guint i = 0;
 	GHashTable *backends = g_hash_table_new(g_str_hash, g_str_equal);  /* backend name -> backend */
@@ -173,7 +173,7 @@ gboolean chassis_log_load_config(chassis_log_t *log, const gchar *file_name, GEr
 	ret = TRUE; /* everything was fine, we read the config */
 
 error_cleanup:
-	g_strfreev(keys);
+	if (keys) g_strfreev(keys);
 	g_hash_table_destroy(backends);
 	g_key_file_free(config);
 
