@@ -222,7 +222,14 @@ function get_module(module_name)
 	-- if the module directory is not on the search path,
 	-- we need to add it
 	--
-	if not package.path:match(tmp_dir) then
+	local path_contains_dir = false
+	for path in package.path:gmatch("[^;]+") do
+		if path == tmp_dir then
+			path_contains_dir = true
+			break
+		end
+	end
+	if not path_contains_dir then
 		package.path = tmp_dir .. '?.lua;' .. package.path
 	end
 	--
