@@ -6,6 +6,7 @@ TESTS_ENVIRONMENT = \
 	LUA_PATH="${top_srcdir}/tests/suite/?.lua" \
 	LUA_CPATH=".libs/?.@DYNLIB_LUA_SUFFIX@;${top_builddir}/lib/.libs/?.@DYNLIB_LUA_SUFFIX@" \
 	@DYNLIB_PATH_VAR@="${top_builddir}/src/.libs/:${@DYNLIB_PATH_VAR@}" \
+	DYNLIB_LUA_SUFFIX="@DYNLIB_LUA_SUFFIX@" \
 	MYSQL_PROXY_VERSION="${PACKAGE_VERSION}" \
 	top_builddir=${top_builddir} \
 	builddir=${builddir} \

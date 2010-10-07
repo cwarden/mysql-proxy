@@ -64,6 +64,7 @@ function TestRunner:new(o)
 	self.__index = self
 
 	local port_base = testutils.get_port_base(os.getenv("MYSQL_PROXY_START_PORT"), os.getenv("MYSQL_PROXY_END_PORT"))
+	local lua_module_suffix = os.getenv("DYNLIB_LUA_SUFFIX") or "so"
 
 	self.testenv.testdir          = fileutils.dirname(arg[0])
 	self.testenv.srcdir	      = os.getenv("srcdir")		 	or self.testenv.testdir .. "/"
@@ -72,7 +73,7 @@ function TestRunner:new(o)
 	self.testenv.plugin_dir       = self.testenv.top_builddir .. "/plugins/"
 	self.testenv.basedir          = lfs.currentdir()
 	self.testenv.lua_path         = self.testenv.basedir .. "/" .. self.testenv.srcdir .. "/../../lib/?.lua"
-	self.testenv.lua_cpath        = self.testenv.basedir .. "/../../lib/.libs/?.so"
+	self.testenv.lua_cpath        = self.testenv.basedir .. "/../../lib/.libs/?." .. lua_module_suffix
 
 	self.testenv.PROXY_HOST       = os.getenv("PROXY_HOST")		or "127.0.0.1"
 	self.testenv.PROXY_PORT       = os.getenv("PROXY_PORT")		or tostring(port_base + 0)
