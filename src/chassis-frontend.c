@@ -194,11 +194,19 @@ char *chassis_frontend_get_default_lua_cpath(const char *base_dir, const char *p
 	 * win32 has .dll
 	 * macosx has .so or .dylib
 	 * hpux has .sl
-	 */ 
+	 *
+	 * if we are built from configure the module suffix is extracted from libtool
+	 * as DYNLIB_LUA_SUFFIX otherwise we use G_MODULE_SUFFIX
+	 */
+#ifdef DYNLIB_LUA_SUFFIX
+#define _LUA_MODULE_SUFFIX DYNLIB_LUA_SUFFIX
+#else
+#define _LUA_MODULE_SUFFIX G_MODULE_SUFFIX
+#endif
 #  if _WIN32
-	return g_build_filename(base_dir, "bin", "lua-?." G_MODULE_SUFFIX, NULL);
+	return g_build_filename(base_dir, "bin", "lua-?." _LUA_MODULE_SUFFIX, NULL);
 #  else
-	return g_build_filename(base_dir, "lib", prg_name, "lua", "?." G_MODULE_SUFFIX, NULL);
+	return g_build_filename(base_dir, "lib", prg_name, "lua", "?." _LUA_MODULE_SUFFIX, NULL);
 #  endif
 }
 

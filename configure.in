@@ -81,6 +81,7 @@ AS_IF([test "x$DYNLIB_LUA_SUFFIX" != x],
        AC_MSG_RESULT([$DYNLIB_LUA_SUFFIX])],
       [AC_MSG_ERROR([eval "DYNLIB_LUA_SUFFIX=$shrext_cmds" failed])])
 AC_SUBST(DYNLIB_LUA_SUFFIX)
+AC_DEFINE_UNQUOTED([DYNLIB_LUA_SUFFIX], ["$DYNLIB_LUA_SUFFIX"], [lua module extension of this platform])
 
 dnl we have to hack around some glib distributions that
 dnl don't set the correct G_MODULE_SUFFIX, notably MacPorts
