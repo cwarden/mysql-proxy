@@ -706,7 +706,6 @@ int network_mysqld_proto_get_fielddef(network_packet *packet, network_mysqld_pro
 		}
 	} else {
 		guint8 len;
-		guint16 field_charsetnr;
 		guint32 field_length;
 		guint8  field_type;
 		guint8  field_decimals;
@@ -740,7 +739,7 @@ int network_mysqld_proto_get_fielddef(network_packet *packet, network_mysqld_pro
 		err = err || network_mysqld_proto_get_int8(packet, &field_decimals);
 
 		if (!err) {
-			field->charsetnr = field_charsetnr;
+			field->charsetnr = 0x08 /* latin1_swedish_ci */;
 			field->length    = field_length;
 			field->type      = field_type;
 			field->decimals  = field_decimals;
