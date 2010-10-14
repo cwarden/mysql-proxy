@@ -274,7 +274,6 @@ Compressed Packet
 =================
 
 Compression is extension to the MySQL Protocol, is transparent to the rest of the MySQL protocol and allows to compress chunks of bytes (e.g. a `MySQL Packet`_).
-The maximum size of a chunk to compress is 16Mbyte.
 
 It is enabled if the server announces `CLIENT_COMPRESS`_ in its `Auth Challenge Packet`_ and the clients requests it too in its `Auth Response Packet`_. It is used
 only in the `Command Phase`_.
@@ -285,7 +284,7 @@ has the parameters of the `uncompress()` function in mind::
   ZEXTERN int ZEXPORT uncompress OF((Bytef *dest,   uLongf *destLen,
                                    const Bytef *source, uLong sourceLen));
 
-The compressed packet its own header which looks like::
+The compressed packet consists of a header and a payload::
 
   compressed packet
     layout:
@@ -307,6 +306,12 @@ with `CLIENT_COMPRESS`_ the packet is::
   cd 49 4d 2e 51 50 32 30    34 32 36 31 35 33 b7 b0    .IM.QP20426153..
   c4 cd 52 02 00 0c d1 0a    6c                         ..R.....l 
 
++--------------+--------+--------------+--------------------------------------------+
+| comp-length  | seq-id | uncomp-len   | compressed payload                         |
++--------------+--------+--------------+--------------------------------------------+
+| ``22 00 00`` | ``00`` | ``32 00 00`` | compress(``"\x2e\x00\x00\x00select ..."``) |
++--------------+--------+--------------+--------------------------------------------+
+
 The compressed packet is 41 bytes long and splits into::
 
   raw packet length                      -> 41
@@ -318,13 +323,13 @@ _`length of compressed payload`
   `raw packet length` minus the size of the compressed packet header (7 bytes) itself. 
 
 _`compressed sequence id`
-  sequence id of the compressed packets, reset in same way as for the MySQL Packets, but incremented independently
+  sequence id of the compressed packets, reset in same way as the `MySQL Packet`_, but incremented independently
 
 _`length of payload before compression`
   size of `compressed payload`_ before it was compressed.
 
 _`compressed payload`
-  payload compressed with zlib's deflate algorithm
+  payload compressed with zlib's deflate algorithm, a `MySQL Packet`_ with length header and its own sequence-id
 
 .. attention:: If `length of payload before compression`_ is `0`, the `compressed payload`_ field contains the `uncompressed payload`_.
 
