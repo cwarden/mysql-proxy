@@ -23,6 +23,6 @@ clean-local:
 html-local: index.html 
 
 index.html: index.rst conf.py $(CHAPTERS)
-	sphinx-build-2.6 -b html ${srcdir} ${builddir}/html
+	${SPHINXBUILD} -b html ${srcdir} ${builddir}/html
 
 
