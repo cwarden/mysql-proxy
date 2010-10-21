@@ -4,6 +4,14 @@
 Chassis
 =======
 
+The chassis provides the fundamentals that all applications need:
+
+* commandline option handling
+* config-file handling
+* logging
+* plugin loading/unloading
+* daemon (unix)/service (win32) support
+
 Configfile and Commandline Options
 ==================================
 
@@ -12,14 +20,74 @@ most options in the same way and accept them from the config-file and the comman
 
 The options are parsed in two steps:
 
-* extract the basic command-line options::
+* extract the basic command-line options:
 
-  --help
-  --version
-  --defaults-file
+  * :option:`--help`
+  * :option:`--version`
+  * :option:`--defaults-file`
 
-* process the defaults-file 
-* process the other command-line options to override the defaults-file
+* process the `defaults file`_
+* process the other command-line options to override the `defaults file`_
+
+Basic options
+-------------
+
+.. option:: --help, -h
+
+  show the help
+
+.. option:: --version, -V
+
+  show the version
+
+.. option:: --defaults-file=<file>
+
+  configuration file 
+
+Defaults file
+-------------
+
+The format of the defaults file is defined in
+
+  http://library.gnome.org/devel/glib/stable/glib-Key-value-file-parser.html#glib-Key-value-file-parser.description
+
+and
+
+  http://standards.freedesktop.org/desktop-entry-spec/latest/
+
+Options
+-------
+
+The commandline options and the `defaults file`_ share the same set of known options. Depending on the type of option
+they accept values in different forms:
+
+============  =============================================================  =============
+type          cmdline                                                        defaults file
+============  =============================================================  =============
+no value      :option:`--daemon`                                             ``daemon=1``
+single value  :option:`--user` ``=foo``                                      ``user=foo``
+multi value   :option:`--plugins` ``=proxy`` :option:`--plugins` ``=admin``  ``plugins=proxy,admin``
+============  =============================================================  =============
+
+`multi value` options always have a plural option name.
+
+
+Common Options
+--------------
+
+Most frontends provide these options
+
+.. option:: --daemon
+
+  go into the background after parsing the configfile and loading the plugins
+
+.. option:: --user=<user>
+
+  try to drop the privileges and run as <user>
+
+.. option:: --basedir=<dir>
+
+  all relatives paths are relative to <dir>
 
 .. _chassis-plugin:
 
