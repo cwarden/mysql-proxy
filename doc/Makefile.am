@@ -1,33 +1,25 @@
-RST2HTML_FLAGS=--rfc-references 
-
-SUBDIRS=chapter
+# SUBDIRS=chapter
 
 EXTRA_DIST = \
 	     lua-classes.dot \
 	     architecture.dot \
 	     architecture-overview.dot \
-	     architecture.txt \
-	     core.txt \
-	     chassis.txt \
-	     log-domains.txt \
-	     plugins.txt \
-	     protocol.txt \
-	     tests.txt \
-	     scripting.txt \
+	     architecture.rst \
+	     core.rst \
+	     chassis.rst \
+	     log-domains.rst \
+	     plugins.rst \
+	     protocol.rst \
+	     tests.rst \
+	     scripting.rst \
 	     lifecycle.msc
 
 clean-local:
 	rm -f *.html
 
-html-local: book.html protocol.html scripting.html
+html-local: index.html 
 
-## we use http://docutils.sourceforge.net/rst.html to generate the docs
-book.html: book.txt chapter/scripting.txt chapter/protocol.txt
-	${RST2HTML} ${RST2HTML_FLAGS} $< $@
+index.html: index.rst scripting.rst protocol.rst
+	sphinx-build-2.6 -b html ${srcdir} ${builddir}
 
-protocol.html: protocol.txt chapter/protocol.txt
-	${RST2HTML} ${RST2HTML_FLAGS} $< $@
-
-scripting.html: scripting.txt chapter/scripting.txt
-	${RST2HTML} ${RST2HTML_FLAGS} $< $@
 

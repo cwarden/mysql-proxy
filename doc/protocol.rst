@@ -1,3 +1,7 @@
+==============
+MySQL Protocol
+==============
+
 The MySQL protocol is used between the MySQL Clients and the MySQL Server. It is implemented by
 
 * the Connectors (Connector/C, ...)

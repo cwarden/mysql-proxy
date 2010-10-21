@@ -443,7 +443,6 @@ AC_CONFIG_FILES([scripts/mysql-proxy:scripts/mysql-proxy-binwrapper.in], [chmod 
 AC_CONFIG_FILES([mysql-proxy.pc])
 AC_CONFIG_FILES([mysql-chassis.pc])
 AC_CONFIG_FILES([doc/Makefile])
-AC_CONFIG_FILES([doc/chapter/Makefile])
 AC_OUTPUT
 
 
