@@ -1770,6 +1770,8 @@ If it failed, a `ERR packet`_ is sent.
 As LOAD DATA isn't supported by `COM_STMT_PREPARE`_ yet, no is `LOCAL INFILE request`_ expected here.
 Compare this to `COM_QUERY response`_.
 
+.. _com_stmt_prepare_ok_packet:
+
 COM_STMT_PREPARE OK packet
 **************************
 

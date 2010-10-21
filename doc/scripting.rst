@@ -21,7 +21,13 @@ Rewriting packets
   :linenos:
   :lines: 26-
 
+Decoding Prepared Statements
+----------------------------
 
+.. literalinclude:: ../examples/tutorial-prep-stmts.lua
+  :language: lua
+  :linenos:
+  :lines: 21-
 
 Hooks
 =====
@@ -77,6 +83,9 @@ disconnect_client
 
 Modules
 =======
+
+.. index:: 
+  module: mysql.proto
 
 mysql.proto
 -----------
@@ -221,7 +230,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
   
 .. js:function:: from_stmt_prepare_ok_packet
 
-  Decodes a COM_STMT_PACKET OK-packet
+  Decodes a :ref:`com_stmt_prepare_ok_packet`
   
   :param string packet: mysql packet
   :throws: an error
@@ -275,16 +284,29 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
   If decoding fails it raises an error.
   
   To get the ``num_params`` for this function, you have to track the track the number of parameters as returned
-  by the `from_stmt_prepare_ok_packet`_. Use `stmt_id_from_stmt_execute_packet`_ to get the ``statement-id`` from
+  by the :js:func:`from_stmt_prepare_ok_packet`. Use js:func:`stmt_id_from_stmt_execute_packet` to get the ``statement-id`` from
   the COM_STMT_EXECUTE packet and lookup your tracked information.
 
-.. js:function:: stmt_id_from_stmt_execute_packet
+  .. seealso::
+  
+    Example `Decoding Prepared Statements`_
+       Example how to use :js:func:`stmt_id_from_stmt_execute_packet`
+
+    :js:func:`stmt_id_from_stmt_execute_packet`
+       How to get the statement id 
+ 
+.. js:function:: stmt_id_from_stmt_execute_packet(packet)
 
   Decodes statement-id from a COM_STMT_EXECUTE-packet
   
   :param string packet: mysql packet
   :throws: an error
   :returns: the ``statement-id`` as ``int``
+
+  .. seealso::
+  
+    Example `Decoding Prepared Statements`_
+       Example how to use :js:func:`stmt_id_from_stmt_execute_packet`
   
 .. js:function:: from_stmt_close_packet
 
@@ -294,6 +316,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
   :throws: an error
   :returns: On success it returns a table containing:
     ``stmt_id`` (int) statement-id that shall be closed
+
   
 
 
