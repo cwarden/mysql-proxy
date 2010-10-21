@@ -2,6 +2,27 @@
 Scripting MySQL Proxy
 =====================
 
+Tutorial
+========
+
+Commands passing by
+-------------------
+
+.. literalinclude:: ../examples/tutorial-basic.lua
+  :language: lua
+  :linenos:
+  :lines: 26-
+
+Rewriting packets
+-----------------
+
+.. literalinclude:: ../examples/tutorial-rewrite.lua
+  :language: lua
+  :linenos:
+  :lines: 26-
+
+
+
 Hooks
 =====
 

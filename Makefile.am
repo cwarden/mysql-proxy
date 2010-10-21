@@ -4,7 +4,6 @@ EXTRA_DIST = \
 		config.h.cmake \
 		COPYING.lfs \
 		Doxyfile \
-		README.TESTS \
 		autogen.sh \
 		mysql-proxy.spec \
 		winbuild.bat \

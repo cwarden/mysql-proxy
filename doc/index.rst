@@ -11,9 +11,14 @@ Contents:
 .. toctree::
   :maxdepth: 2
 
-  chapter/protocol
-  chapter/scripting
   architecture
+  chassis
+  core
+  plugins
+  scripting
+  log-domains
+  testing
+  protocol
 
 Indices and tables
 ==================

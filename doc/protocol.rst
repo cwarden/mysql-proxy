@@ -351,7 +351,9 @@ source
 sourceLen
   `length of compressed payload`_
 
-Using aboves example as input the code should look a bit like::
+Using aboves example as input the code should look a bit like:
+
+.. code-block:: c
 
   const Bytef *src = "\x22\x00...";
   const Bytef *comp_payload = src + 7; /* skip the compressed packet header */

@@ -1,38 +1,43 @@
-/**
-@mainpage
+===========
+Architecure
+===========
 
 The MySQL Proxy is a simple program which sits between a mysql client and a mysql server and
 can inspect, transform and act on the data sent through it.
 
 You can use it for:
-@li load balancing
-@li fail over
-@li query tracking
-@li query analysis
-@li ... and much more
 
-Internally the MySQL Proxy is a stack of:
+* load balancing
+* fail over
+* query tracking
+* query analysis
+* ... and much more
 
-@dotfile architecture-overview.dot
+On the source code level it is built on 4 blocks:
+
++---------------------+----------+
+| :ref:`ref-chassis`  | plugins  |
+|                     +----------+
+|                     | protocol |
+|                     +----------+
+|                     | network  |
++---------------------+----------+
 
 It is based on a @subpage page-core that exposes the phases of the
 @subpage protocol to a @ref page-plugins.
 
-@dot
-digraph {
-connect -> auth;
-auth -> command;
-command -> disconnect;
-command -> command;
-connect -> disconnect;
-auth -> disconnect;
-}
+.. digraph:: phases
 
-@enddot
+    connect -> auth;
+    auth -> command;
+    command -> disconnect;
+    command -> command;
+    connect -> disconnect;
+    auth -> disconnect;
 
 Each of the phases of the life-cycle lead to several more protocol-states. For example the auth phase is made up of at least 3 packets:
 
-@msc
+.. msc::
 	Client, Proxy, Server;
 
 	Client -> Proxy [ label = "accept()" ];
@@ -49,32 +54,32 @@ Each of the phases of the life-cycle lead to several more protocol-states. For e
 	Proxy -> Proxy [ label = "script: read_auth_result()" ];
 	Proxy -> Client [ label = "send(auth-result)" ];
 	...;
-	
-@endmsc
 
-While the @ref page-core is scalable to a larger number of connections, the plugin/scripting
+While the :ref:`page-core` is scalable to a larger number of connections, the plugin/scripting
 layer hides the complexity from the end-users and simplifies the customization. 
 
-@section section-stack-of-libs Chassis, libraries and Plugins
+Chassis, libraries and Plugins
+==============================
 
 It is built as a stack of libraries:
 
 The @subpage page-chassis provides the common functions that all commandline and daemon applications
 need: 
-@li commandline and configfiles
-@li logging
-@li daemon/service support
-@li plugin loading
+
+* commandline and configfiles
+* logging
+* daemon/service support
+* plugin loading
 
 The MySQL Procotol libraries which can encode and decode:
-@li client protocol
-@li binlog protocol
-@li myisam files
-@li frm files
-@li masterinfo files
+
+* client protocol
+* binlog protocol
+* myisam files
+* frm files
+* masterinfo files
 
 The @ref page-core and the @subpage page-plugins.
 
 @dotfile architecture.dot
 
-*/ 
