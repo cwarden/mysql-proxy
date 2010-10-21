@@ -12,7 +12,6 @@ EXTRA_DIST = \
 	     lua-classes.dot \
 	     architecture.dot \
 	     architecture-overview.dot \
-	     lifecycle.msc \
 	     index.rst \
 	     conf.py \
 	     ${CHAPTERS}

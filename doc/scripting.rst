@@ -32,54 +32,193 @@ Decoding Prepared Statements
 Hooks
 =====
 
+The proxy plugin exposes some hooks to the scripting layer that get called in the different stages of the 
+communication between client and backend:
+
+.. msc::
+	Client, Core, Backend, Plugin;
+
+	--- [ label = "connect" ];
+	Client -> Core [ label = "connect()" ];
+	Core => Plugin [ label = "connect_server()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Backend [ label = "connect()" ];
+
+	--- [ label = "auth challenge" ];
+	Backend -> Core [ label = "read(auth challenge packet)" ];
+	Core => Plugin [ label = "read_auth_handshake()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Client [ label = "write(auth challenge packet)" ];
+	--- [ label = "auth response" ];
+	Client -> Core [ label = "read(auth response packet)" ];
+	Core => Plugin [ label = "read_auth()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Backend [ label = "write(auth response packet)" ];
+	--- [ label = "auth status" ];
+	Backend -> Core [ label = "read(auth response packet)" ];
+	Core => Plugin [ label = "read_auth_result()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Client [ label = "write(auth response packet)" ];
+	--- [ label = "query" ];
+	Client -> Core [ label = "read(command packet)" ];
+	Core => Plugin [ label = "read_query()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Backend [ label = "write(command packet)" ];
+	--- [ label = "query response" ];
+	Backend -> Core [ label = "read(command response packet)" ];
+	Core => Plugin [ label = "read_query_result()" ];
+	Core << Plugin [ label = "NO_DECISION" ];
+	Core -> Client [ label = "write(command response packet)" ];
+
+	--- [ label = "disconnect" ];
+	Client -> Core [ label = "close()" ];
+	Core => Plugin [ label = "disconnect_client()" ];
+	Core << Plugin [ label = "ignored" ];
+	Core -> Backend [ label = "close()" ];
+
+They allow change the normal life-cycle:
+
+* never connect to a backend
+* replace commands
+* inject commands
+* replace responses
+
 connect_server
 --------------
 
 .. js:function:: connect_server()
 
-  :returns: proxy.PROXY_SEND_RESULT
+  intercept the ``connect()`` call to the backend
+
+  :returns:
+    nothing or ``nil``
+      to connect to the backend using the standard backend selection algorithm
+  
+    proxy.PROXY_SEND_RESULT
+      doesn't connect to the backend, but returns the content of proxy.response 
+      to the client
 
 read_auth
 ---------
 
-.. js:function:: read_auth()
+.. js:function:: read_auth(packet)
 
-  :returns: proxy.PROXY_SEND_RESULT
+  :param string packet: the auth challenge packet as raw string
+  :returns:
+    nothing or ``nil``
+      to forward the auth packet to the client
+
+    proxy.PROXY_SEND_RESULT
+      replace the backends packet with the content of proxy.response 
 
 
 read_auth_result
 ----------------
 
-.. js:function:: read_auth_result(path)
+.. js:function:: read_auth_result(packet)
 
-  :returns: proxy.PROXY_SEND_RESULT
+  :param string packet: the auth response packet as raw string
+  :returns:
+    nothing or ``nil``
+      to forward the auth packet to the backend
+
+    proxy.PROXY_SEND_RESULT
+      replace the clients packet with the content of proxy.response 
 
 read_query
 ----------
 
-.. js:function:: read_auth(packet)
+.. js:function:: read_query(packet)
 
-  :param string packet: the command packet
-  :returns: proxy.PROXY_SEND_RESULT
+  :param string packet: the command packet as raw string
+  :returns:
+    nothing or ``nil``
+      to forward the command packet to the backend
 
+    proxy.PROXY_SEND_QUERY
+      send the first packet of proxy.queries to the backend
 
+    proxy.PROXY_SEND_RESULT
+      send the client the content of proxy.response and send nothing to the backend
 
 read_query_result
 -----------------
 
 .. js:function:: read_query_result(inj)
 
-  :param string packet: the command packet
-  :returns: proxy.PROXY_SEND_RESULT
+  intercept the response to a command packet
+
+  :param inj: injection object
+  :returns:
+    nothing or ``nil``
+      to forward the resultset to the client
+
+    proxy.PROXY_SEND_RESULT
+      send the client the content of proxy.response
+
+    proxy.PROXY_IGNORE_RESULT
+      don't send the resultset to the client.
 
 disconnect_client
 -----------------
 
-.. js:function:: read_query_result(inj)
+.. js:function:: disconnect_client()
 
-  :param string packet: the command packet
-  :returns: proxy.PROXY_SEND_RESULT
+  intercept the ``close()`` of the client connection
 
+Public structures
+=================
+
+`proxy.response`
+  carries the information what to return to the client in case of ``proxy.PROXY_SEND_RESULT``
+
+  In has the fields:
+
+  ``type`` (int)
+    one of proxy.MYSQL_PACKET_OK, proxy.MYSQL_PACKET_ERR or proxy.MYSQL_PACKET_RAW
+
+  if type == proxy.MYSQL_PACKET_OK:
+
+  ``resultset`` (table)
+    a resultset which has the fields:
+
+    ``fields``
+      array of `name` and `type`
+
+    ``rows``
+      array of tables that contain the fields of each row
+
+  ``affected_rows`` (int)
+    affected rows 
+ 
+  ``insert_id`` (int)
+    insert id
+
+  if type == proxy.MYSQL_PACKET_RAW:
+
+  ``raw``
+    string or table of packes to the return AS IS 
+
+  if type == proxy.MYSQL_PACKET_ERR:
+
+  ``errmsg``
+    error message
+
+  ``errcode``
+    error code 
+
+  ``sqlstate``
+    SQL state
+
+`proxy.global`
+  table that is shared between all connections
+
+Public functions
+================
+
+.. js:function:: proxy.queries:append(ndx, packet, [options])
+  
+.. js:function:: proxy.queries:prepend(ndx, packet, [options])
 
 Modules
 =======
