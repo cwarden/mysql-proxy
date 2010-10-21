@@ -634,11 +634,11 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
       (string) password challenge
 
 
-.. js:function:: mysql.proto.to_challenge_packet
+.. js:function:: mysql.proto.to_challenge_packet(auth)
 
   Encode a auth-response-packet
 
-.. js:function:: mysql.proto.from_response_packet
+.. js:function:: mysql.proto.from_response_packet(packet)
 
   Decodes a auth-response-packet
   
@@ -659,7 +659,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
 
   Encode a table into the content of ``master.info`` file
 
-.. js:function:: mysql.proto.from_stmt_prepare_packet
+.. js:function:: mysql.proto.from_stmt_prepare_packet(packet)
 
   Decodes a COM_STMT_PREPARE-packet
   
@@ -670,7 +670,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
     ``stmt_text`` (string)
       text of the prepared statement
   
-.. js:function:: mysql.proto.from_stmt_prepare_ok_packet
+.. js:function:: mysql.proto.from_stmt_prepare_ok_packet(packet)
 
   Decodes a :ref:`com_stmt_prepare_ok_packet`
   
@@ -750,7 +750,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
     Example `Decoding Prepared Statements`_
        Example how to use :js:func:`mysql.proto.stmt_id_from_stmt_execute_packet`
   
-.. js:function:: mysql.proto.from_stmt_close_packet
+.. js:function:: mysql.proto.from_stmt_close_packet(packet)
 
   Decodes a COM_STMT_CLOSE-packet
   
@@ -760,5 +760,39 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
     ``stmt_id`` (int) statement-id that shall be closed
 
   
+.. index:: 
+  module: mysql.tokenizer
 
+mysql.tokenizer
+---------------
+
+.. js:function:: mysql.tokenizer.tokenize(sql)
+
+  tokenize a SQL string
+  
+  :param string sql: a SQL string
+  :returns: a array of SQL tokens where each element is
+
+    `text` (string)
+      text of the token
+
+    `token_id` (int)
+      id of the token
+     
+    `token_name` (string)
+      name of the token like ``TK_SQL_PLUS``
+    
+  .. code-block:: lua
+
+    require("mysql.tokenizer")
+    tokens = assert(tokenizer.tokenize("SELECT 1"))
+    for i = 1, #tokens do
+      local token = tokens[i]
+      print(("[%d] %s (%s)"):format(i, token.text, token.token_name))
+    end
+
+  ::
+
+    [1] SELECT (TK_SQL_SELECT)
+    [2] 1 (TK_INTEGER)
 
