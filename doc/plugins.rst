@@ -1,3 +1,5 @@
+.. _page-plugins:
+
 ==========================
 Plugin and Scripting Layer
 ==========================

@@ -1,3 +1,5 @@
+.. _page-protocol:
+
 ==============
 MySQL Protocol
 ==============

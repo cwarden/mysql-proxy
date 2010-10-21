@@ -43,7 +43,9 @@ In addition to the above basics, when preparing a test case for MySSQL Proxy, yo
     starts a proxy instance, with given parameters. The proxy name is
     used to retrieve information about this instance, to use the proxy
     or to remove it
-    example::
+    example:
+
+    .. code-block:: lua
 
       start_proxy('my_name', 
         {
@@ -123,13 +125,15 @@ variable:
 
 This directory contains Lua libraries
 
--------------- ------------------------- -----------------------
-variable       default                   description
--------------- ------------------------- -----------------------
-LUA_LDIR       /usr/share/lua/5.1/?.lua  server wide Lua libraries
-LUA_PATH       /usr/local/share/?.lua    MySQL Proxy Lua libraries
-LUA_USER_PATH  ./trunk/lib/?.lua         user defined libraries
--------------- ------------------------- -----------------------
++-------------------------+--------------------------+---------------------------+
+| variable                | default                  | description               |
++-------------------------+--------------------------+---------------------------+
+| :envvar:`LUA_LDIR`      | /usr/share/lua/5.1/?.lua | server wide Lua libraries |
++-------------------------+--------------------------+---------------------------+
+| :envvar:`LUA_PATH`      | /usr/local/share/?.lua   | MySQL Proxy Lua libraries |
++-------------------------+--------------------------+---------------------------+
+| :envvar:`LUA_USER_PATH` | ./trunk/lib/?.lua        | user defined libraries    |
++-------------------------+--------------------------+---------------------------+
 
 In addition to the above paths, the current suite is searched for
 libraries as well.::
@@ -139,15 +143,17 @@ libraries as well.::
 troubleshooting
 ---------------
 
-If Lua complains about missing the lfs library, prepend the LUA_CPATH variable to the actual command::
+If Lua complains about missing the ``lfs`` library, prepend the :envvar:`LUA_CPATH` variable to the actual command::
 
   $ LUA_CPATH='tests/.libs/?.so' lua tests/run-tests.lua tests/suite/base
 
 If the test suite complains about access denied, perhaps you need to provide a password. 
-The default user for the test suite is 'root', with no password.
-If you want to run the tests with a different username and password, 
-set the following environment variables::
 
-  MYSQL_USER
-  MYSQL_PASSWORD
+The default user for the test suite is 'root', with no password.
+
+If you want to run the tests with a different username and password,
+set the following environment variables:
+
+* :envvar:`MYSQL_USER`
+* :envvar:`MYSQL_PASSWORD`
 

@@ -91,6 +91,20 @@ Most frontends provide these options
 
 .. _chassis-plugin:
 
+Frontends
+=========
+
+Frontends provide the ``main()`` function and wired up the defaults and the chassis.
+
+Usually they are all very similar, they just have different defaults like the plugin-names.
+
+The MySQL Proxy frontend :command:`mysql-proxy` loads the plugins:
+
+* :ref:`plugin-proxy`
+* :ref:`plugin-admin`
+
+by default.
+
 Plugin Interface
 ================
 
@@ -105,13 +119,6 @@ The chassis provides the fundamentals for the plugin interface:
 
 As the chassis is not MySQL specific it can load any kind of plugin as long as it 
 exposes the init and shutdown functions. 
-
-For the MySQL Proxy you usually load plugins like:
-
-* :ref:`plugin-proxy`
-* :ref:`plugin-admin`
-
-... which interface with MySQL @ref section-lifecycle. 
 
 Threaded IO
 ===========
