@@ -443,6 +443,90 @@ Modules
 =======
 
 .. index:: 
+  module: chassis
+
+chassis
+-------
+
+.. js:function:: chassis.log(level, string)
+
+  log string with level
+
+  :param string level: log-level
+  :param string string: string to log
+
+.. js:function:: chassis.critical(string)
+
+  log string with level ``critical``
+
+  :param string string: string to log
+
+.. js:function:: chassis.debug(string)
+
+  log string with level ``debug``
+
+  :param string string: string to log
+
+.. js:function:: chassis.message(string)
+
+  log string with level ``message``
+
+  :param string string: string to log
+
+.. js:function:: chassis.info(string)
+
+  log string with level ``info``
+
+.. js:function:: chassis.warning(string)
+
+  log string with level ``warning``
+
+  :param string string: string to log
+
+.. js:function:: chassis.set_shutdown()
+
+  asks the chassis to shutdown
+
+.. js:function:: chassis.get_stats()
+
+  :returns: table of internal stats
+
+.. js:function:: chassis.mem_profile()
+
+  calls http://library.gnome.org/devel/glib/stable/glib-Memory-Allocation.html#g-mem-profile
+
+
+.. index:: 
+  module: glib2
+
+glib2
+-----
+
+.. js:function:: glib2.get_current_time()
+
+  :returns: table
+
+    `tv_sec`
+      seconds since epoch
+
+    `tv_usec`
+      microseconds since last second
+
+.. js:function:: glib2.md5(text)
+
+  :param string text: text to hash
+  :returns: (string) hashed text
+
+.. js:function:: glib2.setenv(key, value)
+
+  :param string key: environment variable to set
+  :param string value: value of the environment variable
+
+.. js:function:: glib2.usleep()
+
+  :param int time: time to sleep in micro-seconds
+
+.. index:: 
   module: mysql.proto
 
 mysql.proto
