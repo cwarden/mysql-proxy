@@ -29,20 +29,51 @@ Hooks
 connect_server
 --------------
 
+.. js:function:: connect_server()
+
+  :returns: proxy.PROXY_SEND_RESULT
+
 read_auth
 ---------
+
+.. js:function:: read_auth()
+
+  :returns: proxy.PROXY_SEND_RESULT
+
 
 read_auth_result
 ----------------
 
+.. js:function:: read_auth_result(path)
+
+  :returns: proxy.PROXY_SEND_RESULT
+
 read_query
 ----------
+
+.. js:function:: read_auth(packet)
+
+  :param string packet: the command packet
+  :returns: proxy.PROXY_SEND_RESULT
+
+
 
 read_query_result
 -----------------
 
+.. js:function:: read_query_result(inj)
+
+  :param string packet: the command packet
+  :returns: proxy.PROXY_SEND_RESULT
+
 disconnect_client
 -----------------
+
+.. js:function:: read_query_result(inj)
+
+  :param string packet: the command packet
+  :returns: proxy.PROXY_SEND_RESULT
+
 
 Modules
 =======
@@ -53,299 +84,216 @@ mysql.proto
 The ``mysql.proto`` module provides encoders and decoders for the packets exchanged between client and server
 
 
-from_err_packet
-...............
+.. js:function:: from_err_packet(packet)
 
-Decodes a ERR-packet into a table.
+  Decodes a ERR-packet into a table.
 
-Parameters:
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: a table
 
-``packet``
-  (string) mysql packet
+    ``errmsg`` (string)
+    
+    ``sqlstate`` (string)
+    
+    ``errcode`` (int)
 
 
-On success it returns a table containing:
+.. js:function:: to_err_packet(err)
 
-``errmsg``
-  (string)
-
-``sqlstate``
-  (string)
-
-``errcode``
-  (int)
-
-Otherwise it raises an error.
-
-to_err_packet
-.............
-
-Encode a table containing a ERR packet into a MySQL packet.
-
-Parameters:
-
-``err``
-  (table)
+  Encode a table containing a ERR packet into a MySQL packet.
   
-  ``errmsg``
-    (string)
+  :param table err:
   
-  ``sqlstate``
-    (string)
+    ``errmsg`` (string)
+    
+    ``sqlstate`` (string)
+    
+    ``errcode`` (int)
   
-  ``errcode``
-    (int)
+  :returns: Returns a string.
 
-into a MySQL packet.
+.. js:function:: from_ok_packet(packet)
 
-Returns a string.
+  Decodes a OK-packet
 
-from_ok_packet
-..............
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: table:
 
-Decodes a OK-packet
+    ``server_status`` (int) bit-mask of the connection status
+    
+    ``insert_id`` (int) last used insert id
+    
+    ``warnings`` (int) number of warnings for the last executed statement
+    
+    ``affected_rows`` (int) rows affected by the last statement
 
-``packet``
-  (string) mysql packet
 
+.. js:function:: to_ok_packet(ok)
 
-On success it returns a table containing:
+  Encode a OK packet
 
-``server_status``
-  (int) bit-mask of the connection status
+.. js:function:: from_eof_packet(packet)
 
-``insert_id``
-  (int) last used insert id
+  Decodes a EOF-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: table
 
-``warnings``
-  (int) number of warnings for the last executed statement
-
-``affected_rows``
-  (int) rows affected by the last statement
-
-Otherwise it raises an error.
-
-
-to_ok_packet
-............
-
-Encode a OK packet
-
-from_eof_packet
-...............
-
-Decodes a EOF-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-On success it returns a table containing:
-
-``server_status``
-  (int) bit-mask of the connection status
-
-``warnings``
-  (int)
-
-Otherwise it raises an error.
-
-
-to_eof_packet
-.............
-
-from_challenge_packet
-.....................
-
-Decodes a auth-challenge-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-On success it returns a table containing:
-
-``protocol_version``
-  (int) version of the mysql protocol, usually 10
-
-``server_version``
-  (int) version of the server as integer: 50506 is MySQL 5.5.6
-
-``thread_id``
-  (int) connection id
-
-``capabilities``
-  (int) bit-mask of the server capabilities
-
-``charset``
-  (int) server default character-set
-
-``server_status``
-  (int) bit-mask of the connection-status
-
-``challenge``
-  (string) password challenge
-
-
-to_challenge_packet
-...................
-
-Encode a auth-response-packet
-
-from_response_packet
-....................
-
-Decodes a auth-response-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-to_response_packet
-..................
-
-from_masterinfo_string
-......................
-
-Decodes the content of the ``master.info`` file.
-
-
-to_masterinfo_string
-....................
-
-from_stmt_prepare_packet
-........................
-
-Decodes a COM_STMT_PREPARE-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-On success it returns a table containing:
-
-``stmt_text``
-  (string)
-  text of the prepared statement
-
-Otherwise it raises an error.
-
-from_stmt_prepare_ok_packet
-...........................
-
-Decodes a COM_STMT_PACKET OK-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-On success it returns a table containing:
-
-``stmt_id``
-  (int) statement-id
-
-``num_columns``
-  (int) number of columns in the resultset
-
-``num_params``
-  (int) number of parameters
-
-``warnings``
-  (int) warnings generated by the prepare statement
-
-Otherwise it raises an error.
-
-
-from_stmt_execute_packet
-........................
-
-Decodes a COM_STMT_EXECUTE-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-``num_params``
-  (int) number of parameters of the corresponding prepared statement
-
-On success it returns a table containing:
-
-``stmt_id``
-  (int) statemend-id
-
-``flags``
-  (int) flags describing the kind of cursor used
-
-``iteration_count``
-  (int) iteration count: always 1
-
-``new_params_bound``
-  (bool) 
-
-``params``
-  (nil, table) 
-  number-index array of parameters if ``new_params_bound`` is ``true``
-
-Each param is a table of:
-
-``type``
-  (int)
-  MYSQL_TYPE_INT, MYSQL_TYPE_STRING ... and so on
-
-``value``
-  (nil, number, string)
-  if the value is a NULL, it ``nil``
-  if it is a number (_INT, _DOUBLE, ...) it is a ``number``
-  otherwise it is a ``string``
-
-If decoding fails it raises an error.
-
-To get the ``num_params`` for this function, you have to track the track the number of parameters as returned
-by the `from_stmt_prepare_ok_packet`_. Use `stmt_id_from_stmt_execute_packet`_ to get the ``statement-id`` from
-the COM_STMT_EXECUTE packet and lookup your tracked information.
-
-stmt_id_from_stmt_execute_packet
-................................
-
-Decodes statement-id from a COM_STMT_EXECUTE-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-On success it returns the ``statement-id`` as ``int``.
-
-Otherwise it raises an error.
-
-from_stmt_close_packet
-......................
-
-Decodes a COM_STMT_CLOSE-packet
-
-Parameters:
-
-``packet``
-  (string) mysql packet
-
-
-On success it returns a table containing:
-
-``stmt_id``
-  (int)
-  statement-id that shall be closed
-
-Otherwise it raises an error.
+    ``server_status``
+      (int) bit-mask of the connection status
+    
+    ``warnings``
+      (int)
+  
+
+.. js:function:: to_eof_packet(eof)
+
+  Encode a EOF packet into a string
+
+.. js:function:: from_challenge_packet(packet)
+
+  Decodes a auth-challenge-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: table
+
+    ``protocol_version``
+      (int) version of the mysql protocol, usually 10
+    
+    ``server_version``
+      (int) version of the server as integer: 50506 is MySQL 5.5.6
+    
+    ``thread_id``
+      (int) connection id
+    
+    ``capabilities``
+      (int) bit-mask of the server capabilities
+    
+    ``charset``
+      (int) server default character-set
+    
+    ``server_status``
+      (int) bit-mask of the connection-status
+    
+    ``challenge``
+      (string) password challenge
+
+
+.. js:function:: to_challenge_packet
+
+  Encode a auth-response-packet
+
+.. js:function:: from_response_packet
+
+  Decodes a auth-response-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: table
+
+.. js:function:: to_response_packet
+
+  Encode a Auth Response packet
+
+.. js:function:: from_masterinfo_string
+
+  Decodes the content of the ``master.info`` file.
+
+
+.. js:function:: to_masterinfo_string
+
+  Encode a table into the content of ``master.info`` file
+
+.. js:function:: from_stmt_prepare_packet
+
+  Decodes a COM_STMT_PREPARE-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: a table containing
+
+    ``stmt_text`` (string)
+      text of the prepared statement
+  
+.. js:function:: from_stmt_prepare_ok_packet
+
+  Decodes a COM_STMT_PACKET OK-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: table
+  
+    ``stmt_id`` (int)
+      statement-id
+    
+    ``num_columns`` (int)
+      number of columns in the resultset
+    
+    ``num_params`` (int)
+      number of parameters
+    
+    ``warnings`` (int)
+      warnings generated by the prepare statement
+
+.. js:function:: from_stmt_execute_packet(packet, num_params)
+
+  Decodes a COM_STMT_EXECUTE-packet
+  
+  :param string packet: mysql packet
+  :param int num_params: number of parameters of the corresponding prepared statement
+  
+  :returns: table
+  
+    ``stmt_id`` (int)
+      statement-id
+    
+    ``flags`` (int)
+      flags describing the kind of cursor used
+    
+    ``iteration_count`` (int)
+      iteration count: always 1
+    
+    ``new_params_bound`` (bool) 
+    
+    ``params`` (nil, table)
+      number-index array of parameters if ``new_params_bound`` is ``true``
+  
+      Each param is a table of:
+      
+      ``type`` (int)
+        MYSQL_TYPE_INT, MYSQL_TYPE_STRING ... and so on
+      
+      ``value`` (nil, number, string)
+        if the value is a NULL, it ``nil``
+        if it is a number (_INT, _DOUBLE, ...) it is a ``number``
+        otherwise it is a ``string``
+  
+  If decoding fails it raises an error.
+  
+  To get the ``num_params`` for this function, you have to track the track the number of parameters as returned
+  by the `from_stmt_prepare_ok_packet`_. Use `stmt_id_from_stmt_execute_packet`_ to get the ``statement-id`` from
+  the COM_STMT_EXECUTE packet and lookup your tracked information.
+
+.. js:function:: stmt_id_from_stmt_execute_packet
+
+  Decodes statement-id from a COM_STMT_EXECUTE-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: the ``statement-id`` as ``int``
+  
+.. js:function:: from_stmt_close_packet
+
+  Decodes a COM_STMT_CLOSE-packet
+  
+  :param string packet: mysql packet
+  :throws: an error
+  :returns: On success it returns a table containing:
+    ``stmt_id`` (int) statement-id that shall be closed
+  
 
 
