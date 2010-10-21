@@ -1092,6 +1092,8 @@ It may also be resultset with an closing `ERR packet`_:
 
 which is generated for queries like `EXPLAIN SELECT * FROM dual`.
 
+.. _`protocol-column-type`:
+
 Column Type
 ,,,,,,,,,,,
 

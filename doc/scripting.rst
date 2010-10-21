@@ -94,8 +94,8 @@ connect_server
     nothing or ``nil``
       to connect to the backend using the standard backend selection algorithm
   
-    proxy.PROXY_SEND_RESULT
-      doesn't connect to the backend, but returns the content of proxy.response 
+    :js:data:`proxy.PROXY_SEND_RESULT`
+      doesn't connect to the backend, but returns the content of :js:data:`proxy.response`
       to the client
 
 read_auth
@@ -108,8 +108,8 @@ read_auth
     nothing or ``nil``
       to forward the auth packet to the client
 
-    proxy.PROXY_SEND_RESULT
-      replace the backends packet with the content of proxy.response 
+    :js:data:`proxy.PROXY_SEND_RESULT`
+      replace the backends packet with the content of :js:data:`proxy.response`
 
 
 read_auth_result
@@ -122,8 +122,8 @@ read_auth_result
     nothing or ``nil``
       to forward the auth packet to the backend
 
-    proxy.PROXY_SEND_RESULT
-      replace the clients packet with the content of proxy.response 
+    :js:data:`proxy.PROXY_SEND_RESULT`
+      replace the clients packet with the content of :js:data:`proxy.response`
 
 read_query
 ----------
@@ -135,11 +135,11 @@ read_query
     nothing or ``nil``
       to forward the command packet to the backend
 
-    proxy.PROXY_SEND_QUERY
+    :js:data:`proxy.PROXY_SEND_QUERY`
       send the first packet of proxy.queries to the backend
 
-    proxy.PROXY_SEND_RESULT
-      send the client the content of proxy.response and send nothing to the backend
+    :js:data:`proxy.PROXY_SEND_RESULT`
+      send the client the content of :js:data:`proxy.response` and send nothing to the backend
 
 read_query_result
 -----------------
@@ -148,15 +148,15 @@ read_query_result
 
   intercept the response to a command packet
 
-  :param inj: injection object
+  :param Injection inj: injection object
   :returns:
     nothing or ``nil``
       to forward the resultset to the client
 
-    proxy.PROXY_SEND_RESULT
-      send the client the content of proxy.response
+    :js:data:`proxy.PROXY_SEND_RESULT`
+      send the client the content of :js:data:`proxy.response`
 
-    proxy.PROXY_IGNORE_RESULT
+    :js:data:`proxy.PROXY_IGNORE_RESULT`
       don't send the resultset to the client.
 
 disconnect_client
@@ -166,59 +166,278 @@ disconnect_client
 
   intercept the ``close()`` of the client connection
 
+Public contants
+===============
+
+.. js:data:: proxy.MYSQLD_PACKET_OK
+.. js:data:: proxy.MYSQLD_PACKET_ERR
+.. js:data:: proxy.MYSQLD_PACKET_RAW
+
+.. js:data:: proxy.PROXY_SEND_RESULT
+.. js:data:: proxy.PROXY_IGNORE_RESULT
+.. js:data:: proxy.PROXY_SEND_QUERY
+
+.. js:data:: proxy.COM_QUERY
+.. js:data:: proxy.COM_QUIT
+
+.. js:data:: proxy.MYSQL_TYPE_STRING
+
+.. todo::
+  add all constants
+
 Public structures
 =================
 
-`proxy.response`
-  carries the information what to return to the client in case of ``proxy.PROXY_SEND_RESULT``
+.. js:data:: proxy.response
+
+  carries the information what to return to the client in case of :js:data:`proxy.PROXY_SEND_RESULT`
 
   In has the fields:
 
   ``type`` (int)
-    one of proxy.MYSQL_PACKET_OK, proxy.MYSQL_PACKET_ERR or proxy.MYSQL_PACKET_RAW
+    one of :js:data:`proxy.MYSQLD_PACKET_OK` :js:data:`proxy.MYSQLD_PACKET_ERR` or :js:data:`proxy.MYSQLD_PACKET_RAW`
 
-  if type == proxy.MYSQL_PACKET_OK:
+  and more fields depending on ``type``:
 
-  ``resultset`` (table)
-    a resultset which has the fields:
+  :js:data:`proxy.MYSQLD_PACKET_OK`
+    ``resultset`` (table)
+      a resultset which has the fields:
+  
+      ``fields``
+        array of `name` and `type`
+  
+      ``rows``
+        array of tables that contain the fields of each row
+  
+    ``affected_rows`` (int)
+      affected rows 
+   
+    ``insert_id`` (int)
+      insert id
 
-    ``fields``
-      array of `name` and `type`
+  :js:data:`proxy.MYSQLD_PACKET_RAW`
+    ``raw``
+      string or table of packes to the return AS IS 
 
-    ``rows``
-      array of tables that contain the fields of each row
+  :js:data:`proxy.MYSQLD_PACKET_ERR`
+    ``errmsg``
+      error message
+  
+    ``errcode``
+      error code 
+  
+    ``sqlstate``
+      SQL state
 
-  ``affected_rows`` (int)
-    affected rows 
- 
-  ``insert_id`` (int)
-    insert id
+.. js:data:: proxy.global
 
-  if type == proxy.MYSQL_PACKET_RAW:
-
-  ``raw``
-    string or table of packes to the return AS IS 
-
-  if type == proxy.MYSQL_PACKET_ERR:
-
-  ``errmsg``
-    error message
-
-  ``errcode``
-    error code 
-
-  ``sqlstate``
-    SQL state
-
-`proxy.global`
   table that is shared between all connections
+
+.. js:data:: proxy.connection
+
+  table of connection data
+
+  `client` (:js:class:`socket`)
+    
+  `server` (:js:class:`socket`)
+
+  `backend_ndx` (int)
+
+.. js:class:: socket
+
+  table of socket info
+
+  .. versionchanged:: 0.7.0
+
+  `dst` (:js:class:`address`)
+    destination address of this socket
+
+  `src` (:js:class:`address`)
+    source address of this socket
+
+.. js:class:: address
+
+  table of address info
+
+  `name` (string)
+    string of `address:port`
+
+  `address` (string)
+    
+  `port` (int)
+
+.. js:class:: Injection
+
+  injection class
+
+  `id` (int)
+    id as passed in as first param of :js:func:`proxy.queries:append` or :js:func:`proxy.queries:prepend`
+
+  `query` (string)
+    packet as passed in as second param of :js:func:`proxy.queries:append` or :js:func:`proxy.queries:prepend`
+
+  `query_time` (number)
+    duration of the 
+
+  `response_time` (number)
+    duration of the 
+
+  `resultset` (:js:data:`InjectionResultset`)
+    resultset
+
+.. js:class:: InjectionResultset
+
+  resultset
+
+.. js:attribute:: InjectionResultset.fields
+
+  :type: (:js:class:`InjectionResultsetFields`)
+
+.. js:attribute:: InjectionResultset.rows
+
+  iterator that returns one row of the resultset at a time (:js:data:`InjectionResultsetRow`)
+
+  .. code-block:: lua
+
+    for row in inj.resultset.rows do
+      print(row[1])
+    end
+
+.. js:attribute:: InjectionResultset.row_count
+
+  rows in the rows table
+  
+  :type: int
+
+.. js:attribute:: InjectionResultset.bytes
+
+  bytes received for this resultset
+
+  :type: int
+
+.. js:attribute:: InjectionResultset.raw
+
+  access to the first packet of the command response
+
+  :type: string
+
+.. js:attribute:: InjectionResultset.flags
+
+  table of flags
+     
+  `in_trans` (bool)
+    we are in a transaction
+
+  `auto_commit` (bool)
+    AUTO COMMIT is enabled
+
+  `no_good_index_used` (bool)
+    no good index used for this query
+
+  `no_index_used` (bool)
+    no index used for this query
+
+.. js:attribute:: InjectionResultset.warning_count
+
+  warnings generated by this command
+
+  :type: int
+
+.. js:attribute:: InjectionResultset.affected_rows
+
+  rows affected
+
+  :type: int
+
+.. js:attribute:: InjectionResultset.insert_id
+
+  insert id
+
+  :type: int
+
+.. js:attribute:: InjectionResultset.query_status
+
+  :type: int or ``nil``
+
+.. js:class:: InjectionResultsetFields 
+
+  array of :js:class:`InjectionResultsetField`
+
+.. js:function:: #InjectionResultsetFields
+
+  :returns: number of columns in the resultset
+
+.. js:class:: InjectionResultsetField
+
+.. js:attribute:: InjectionResultsetField.type
+
+  Column type as defined in :ref:`protocol-column-type`
+
+  :type: int
+
+.. js:attribute:: InjectionResultsetField.name
+
+  name of the column
+
+  :type: string
+
+.. js:attribute:: InjectionResultsetField.org_name
+
+  name of the column before aliasing with ``AS``
+
+  :type: string
+
+  .. code-block:: sql
+
+    SELECT "foo" AS bar;
+
+  results in :js:attr:`InjectionResultsetField.name` == ``bar`` and :js:attr:`InjectionResultsetField.org_name` == ``foo``
+
+.. js:attribute:: InjectionResultsetField.table
+
+  name of the table the column is from
+
+  :type: string
+
+.. js:attribute:: InjectionResultsetField.org_table
+
+  :type: string
+
+.. js:class:: InjectionResultsetRow
+
+  array of fields of the row
 
 Public functions
 ================
 
-.. js:function:: proxy.queries:append(ndx, packet, [options])
+.. js:function:: proxy.queries:append(id, packet, [options])
+
+  append a command packet to injection queue
+
+  :param int id: injection id
+  :param string packet: command packet to send to the backend 
+  :param table options:
+    `resultset_is_needed` (bool)
+      true if `read_query_result` needs access to the resultset
   
-.. js:function:: proxy.queries:prepend(ndx, packet, [options])
+.. js:function:: proxy.queries:prepend(id, packet, [options])
+
+  prepend a command packet to injection queue
+
+  :param int id: injection id
+  :param string packet: command packet to send to the backend
+  :param table options: 
+    `resultset_is_needed` (bool)
+      true if `read_query_result` needs access to the resultset
+  
+
+.. js:function:: proxy.queries:reset()
+
+  reset the injection queue
+
+.. js:function:: #proxy.queries
+
+  :returns: number of command packets in the queue
 
 Modules
 =======
