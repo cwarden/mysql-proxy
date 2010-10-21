@@ -14,7 +14,8 @@ EXTRA_DIST = \
 	     architecture-overview.dot \
 	     lifecycle.msc \
 	     index.rst \
-	     conf.py
+	     conf.py \
+	     ${CHAPTERS}
 
 clean-local:
 	rm -f *.html
@@ -22,6 +23,6 @@ clean-local:
 html-local: index.html 
 
 index.html: index.rst conf.py $(CHAPTERS)
-	sphinx-build-2.6 -b html ${srcdir} ${builddir}
+	sphinx-build-2.6 -b html ${srcdir} ${builddir}/html
 
 
