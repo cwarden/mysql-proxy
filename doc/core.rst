@@ -21,9 +21,9 @@ of the :ref:`page-protocol`:
 The plugins can change the default behaviour of the network core and impliment one of three 
 basic plugins:
 
-* :ref:`page-plugin-admin` implements only the listening side
+* :ref:`plugin-admin` implements only the listening side
 * client plugins implement only the connection side
-* :ref:`page-plugin-proxy` implements both sides 
+* :ref:`plugin-proxy` implements both sides 
 
 Network Core Layer
 ==================
@@ -31,6 +31,9 @@ Network Core Layer
 The MySQL Proxy network engine is meant to handle several thousands connections at the same time. We 
 want to use it for load-balancing and fail-over which means we have to handle the connections for
 a larger group of MySQL backend servers nicely. We aim for 5k to 10k connections.
+
+Event Driven, Async Network IO
+------------------------------
 
 Up to MySQL Proxy 0.7 we use a pure event-driven, non-blocking networking approach is described in
 http://kegel.com/c10k.html#nb using libevent 1.4.x. 
