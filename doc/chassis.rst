@@ -89,6 +89,12 @@ Most frontends provide these options
 
   all relatives paths are relative to <dir>
 
+.. option:: --plugins=<plugin>
+
+  load a plugin
+
+  :multi-value: true
+
 .. _chassis-plugin:
 
 Frontends
