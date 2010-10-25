@@ -910,6 +910,8 @@ unhandled commands
 These commands are only used internally by the server or are deprecated. Sending the to the server always results in a 
 `ERR packet`_.
 
+.. _protocol-com-quit:
+
 COM_QUIT
 --------
 
@@ -926,6 +928,8 @@ COM_QUIT
 
     Example:
       01 00 00 00 01
+
+.. _protocol-com-init-db:
 
 COM_INIT_DB
 -----------
@@ -944,6 +948,8 @@ COM_INIT_DB
 
     example:
       05 00 00 00 02 74 65 73    74                         .....test     
+
+.. _protocol-com-query:
 
 COM_QUERY
 ---------
@@ -1457,6 +1463,7 @@ The `SUPER` privilege is required for this operation.
     payload:
       1              [0d] COM_DEBUG
 
+.. _protocol-com-ping:
 
 COM_PING
 --------
@@ -1471,6 +1478,9 @@ COM_PING
 
     payload:
       1              [0e] COM_PING
+
+
+.. _protocol-com-change-user:
 
 COM_CHANGE_USER
 ---------------
