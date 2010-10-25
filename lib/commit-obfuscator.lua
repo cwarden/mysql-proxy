@@ -35,7 +35,7 @@ function read_query(packet)
 	-- only care about commits 
 	if packet:sub(2):upper() ~= "COMMIT" then return end
 
-	-- let 80% fail
+	-- let 50% fail
 	if math.random(10) <= 5 then return end
 
 	proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "ROLLBACK", { resultset_is_needed = true })
