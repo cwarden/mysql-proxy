@@ -70,6 +70,6 @@ Each of the phases of the life-cycle lead to several more protocol-states. For e
 	Proxy -> Client [ label = "send(auth-result)" ];
 	...;
 
-While the :ref:`page-core` is scalable to a larger number of connections, the plugin/:ref:`scripting`
+While the :ref:`page-core` is scalable to a larger number of connections, the plugin/:ref:`page-scripting`
 layer hides the complexity from the end-users and simplifies the customization. 
 
