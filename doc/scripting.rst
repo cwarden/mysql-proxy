@@ -1,38 +1,19 @@
-=====================
-Scripting MySQL Proxy
-=====================
+.. _page-scripting:
 
-Tutorial
-========
+=========
+Scripting
+=========
 
-Commands passing by
--------------------
+The :ref:`plugin-proxy` of the MySQL Proxy provides a scripting layer than uses Lua as scripting language.
 
-.. literalinclude:: ../examples/tutorial-basic.lua
-  :language: lua
-  :linenos:
-  :lines: 26-
+To run a script load it with :option:`--proxy-lua-script` as in::
 
-Rewriting packets
------------------
-
-.. literalinclude:: ../examples/tutorial-rewrite.lua
-  :language: lua
-  :linenos:
-  :lines: 26-
-
-Decoding Prepared Statements
-----------------------------
-
-.. literalinclude:: ../examples/tutorial-prep-stmts.lua
-  :language: lua
-  :linenos:
-  :lines: 21-
+  $ mysql-proxy --plugins=proxy --proxy-lua-script=<script>
 
 Hooks
 =====
 
-The proxy plugin exposes some hooks to the scripting layer that get called in the different stages of the 
+The :ref:`plugin-proxy` exposes some hooks to the scripting layer that get called in the different stages of the 
 communication between client and backend:
 
 .. msc::
@@ -165,6 +146,86 @@ disconnect_client
 .. js:function:: disconnect_client()
 
   intercept the ``close()`` of the client connection
+
+Tutorial
+========
+
+Commands passing by
+-------------------
+
+The `read_query`_ hook intecepts the commands the client sends to the backend. On of the commands
+we see here is the :ref:`protocol-com-query` which contains the plain-text queries.
+
+.. literalinclude:: ../examples/tutorial-basic.lua
+  :language: lua
+  :linenos:
+  :lines: 26-
+
+Run the script with::
+
+  $ mysql-proxy --plugins=proxy --proxy-lua-script=share/doc/mysql-proxy/tutorial-basic.lua
+
+and use the :command:`mysql` client to send queries through the proxy port set with :option:`--proxy-address` which
+defaults to `:4040`::
+
+  $ mysql --host=127.0.0.1 --port=4040
+
+lets the proxy print::
+
+  2010-10-22 07:46:35: [global] (*) mysql-proxy 0.9.0 started
+  we got a normal query: select @@version_comment limit 1
+  we got a normal query: select USER()
+
+cd, ls, who
+-----------
+
+In the `read_query`_ hook you can also replace the query sent to the server. You have to
+
+* create a new command packet
+* append it to the injection queue
+* return :js:data:`proxy.PROXY_SEND_QUERY`
+
+We use the tokenizer from :js:func:`mysql.tokenizer.tokenize` to split the input into tokens and assemble the pieces
+into new queries again.
+
+* ``cd <db>`` is mapped to :ref:`protocol-com-init-db` + ``<db>``
+* ``ls`` is mapped to :ref:`protocol-com-query` + ``SHOW TABLES``
+* ``ls <db>`` is mapped to :ref:`protocol-com-query` + ``SHOW TABLES FROM <db>``
+* ``who`` is mapped to :ref:`protocol-com-query` + ``SHOW PROCESSLIST``
+
+.. literalinclude:: ../examples/tutorial-rewrite.lua
+  :language: lua
+  :linenos:
+  :lines: 21-
+
+Shake up COMMITs
+----------------
+
+In the `read_query`_ hook you can also return your own responses and you can setup a interceptor for the result of the command
+in `read_query_result`_.
+
+To test of the application handles ``Lock wait timeouts`` correctly, we replace a some ``COMMIT`` commands with ``ROLLBACK`` commands
+and replace the response of the ``ROLLBACK`` that we receive from the backend with our own what matches the ``COMMIT`` of the client.
+
+Whenever you want to replace the resultset you have to 
+
+* set the ``resultset_is_needed`` option in :js:func:`proxy.queries:append`
+* return :js:data:`proxy.PROXY_SEND_QUERY` in `read_query`_
+* set :js:data:`proxy.response` with your response in `read_query_result`_
+* return :js:data:`proxy.PROXY_SEND_RESULT` in `read_query_result`_
+
+.. literalinclude:: ../lib/commit-obfuscator.lua
+  :language: lua
+  :linenos:
+  :lines: 21-
+
+Decoding Prepared Statements
+----------------------------
+
+.. literalinclude:: ../examples/tutorial-prep-stmts.lua
+  :language: lua
+  :linenos:
+  :lines: 21-
 
 Public contants
 ===============
@@ -732,7 +793,7 @@ The ``mysql.proto`` module provides encoders and decoders for the packets exchan
   .. seealso::
   
     Example `Decoding Prepared Statements`_
-       Example how to use :js:func:`stmt_id_from_stmt_execute_packet`
+       Example how to use :js:func:`mysql.proto.stmt_id_from_stmt_execute_packet`
 
     :js:func:`mysql.proto.stmt_id_from_stmt_execute_packet`
        How to get the statement id 

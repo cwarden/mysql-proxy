@@ -17,11 +17,8 @@
  02110-1301  USA
 
  $%ENDLICENSE%$ --]]
---[[
 
-   
-
---]]
+require("proxy.tokenizer")
 
 ---
 -- read_query() can rewrite packets
@@ -42,56 +39,39 @@ function read_query( packet )
 
 		print("we got a normal query: " .. query)
 
-		-- try to match the string up to the first non-alphanum
-		local f_s, f_e, command = string.find(packet, "^%s*(%w+)", 2)
-		local option
+		local tokens = proxy.tokenizer.tokenize(query)
 
-		if f_e then
-			-- if that match, take the next sub-string as option
-			f_s, f_e, option = string.find(packet, "^%s+(%w+)", f_e + 1)
-		end
-		
 		-- support 
 		--
 		-- ls [db]
 		-- cd db
 		-- who
 
-		if command == "ls" then
-			if option then
-				-- FIXME: SQL INJECTION
-				proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "SHOW TABLES FROM " .. option )
-			else
+		if tokens[1].token_name == "TK_LITERAL" and tokens[1].text == "ls" then
+			if #tokens == 1 then
 				proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "SHOW TABLES" )
+				return proxy.PROXY_SEND_QUERY
+			elseif #tokens == 2 then
+				if tokens[2].token_name == "TK_LITERAL" then
+					proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "SHOW TABLES FROM " .. tokens[2].text)
+					return proxy.PROXY_SEND_QUERY
+				end
 			end
 
-			return proxy.PROXY_SEND_QUERY
-		elseif command == "who" then
-			proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "SHOW PROCESSLIST" )
-
-			return proxy.PROXY_SEND_QUERY
-		elseif command == "cd" and option then
-			proxy.queries:append(1, string.char(proxy.COM_INIT_DB) .. option )
-
-			return proxy.PROXY_SEND_QUERY
+		elseif tokens[1].text == "who" then
+			if #tokens == 1 then
+				proxy.queries:append(1, string.char(proxy.COM_QUERY) .. "SHOW PROCESSLIST" )
+	
+				return proxy.PROXY_SEND_QUERY
+			end
+		elseif tokens[1].text == "cd" then
+			if #tokens == 2 then
+				if tokens[2].token_name == "TK_LITERAL" then
+					proxy.queries:append(1, string.char(proxy.COM_INIT_DB) .. tokens[2].text)
+					return proxy.PROXY_SEND_QUERY
+				end
+			end
 		end
 	end
-end
-
----
--- read_query_result() is called when we receive a query result 
--- from the server
---
--- we can analyze the response, drop the response and pass it on (default)
--- 
--- @return 
---   * nothing or proxy.PROXY_SEND_RESULT to pass the result-set to the client
---   * proxy.PROXY_IGNORE_RESULT to drop the result-set
--- 
--- @note: the function has to exist in 0.5.0 if proxy.PROXY_SEND_QUERY 
---   got used in read_query()
---
-function read_query_result(inj)
-	 
 end
 
