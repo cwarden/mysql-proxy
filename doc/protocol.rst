@@ -803,17 +803,8 @@ flags      constant name                   description
 
 `character set` is the connection's default character set and is defined in `Character Set`_.
 
-The `auth-response` is either as defined in `Secure Auth`_ or as in `Old Auth`_ depending on the
-`CLIENT_SECURE_CONNECTION`_, `CLIENT_PROTOCOL_41`_ and `CLIENT_PLUGIN_AUTH`_ capability
+The `auth-response` depends on the `Auth Method`_ that is used.
 
-===================== =========================== ===================== =================
-`CLIENT_PROTOCOL_41`_ `CLIENT_SECURE_CONNECTION`_ `CLIENT_PLUGIN_AUTH`_ `Auth Method`_
-===================== =========================== ===================== =================
-no                    ignored                     ignored               `Old Auth`_
-yes                   no                          no                    `Old Auth`_
-yes                   yes                         no                    `Secure Auth`_
-yes                   yes                         yes                   see `plugin name`
-===================== =========================== ===================== =================
 
 Auth Method Switch Request Packet
 ---------------------------------
@@ -860,6 +851,24 @@ Auth Method
 -----------
 
 Depending on the capability flags the client and server support different authentication methods.
+
+* `Old Auth`_
+* `Secure Auth`_
+* methods provided by auth plugins as defined in `WL1054`_
+
+.. _`WL1054`: http://forge.mysql.com/worklog/task.php?id=1054
+
+It is negotiated as part of the auth handshake. The server announces its supported auth methods as
+part of its capabilties in the `Auth Challenge Packet`_ and the client responds with its set in `Auth Response Packet`_.
+
+===================== =========================== ===================== =================
+`CLIENT_PROTOCOL_41`_ `CLIENT_SECURE_CONNECTION`_ `CLIENT_PLUGIN_AUTH`_ `Auth Method`_
+===================== =========================== ===================== =================
+no                    ignored                     ignored               `Old Auth`_
+yes                   no                          no                    `Old Auth`_
+yes                   yes                         no                    `Secure Auth`_
+yes                   yes                         yes                   see `plugin name`
+===================== =========================== ===================== =================
 
 Old Auth
 ........
@@ -1641,7 +1650,7 @@ COM_CHANGE_USER changes the user of the current connection and reset the connect
         if more bytes in packet:
       2              character-set (since 5.1.23?)
         if more bytes in packet:
-      string         auth plugin name (since 5.5.7 and if CLIENT_PLUGIN_AUTH is used)
+      string         auth plugin name (since WL1054 and if CLIENT_PLUGIN_AUTH is used)
 
 `character set` is the connection character set and is defined in `Character Set`_.
 
