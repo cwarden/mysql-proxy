@@ -670,13 +670,13 @@ or the server denies the client right away if for example its IP is deny:
 1. the client connecting to the server
 2. the server responds with the `ERR Packet`_ and closes connection
 
-MySQL 4.1+ server also may respond at step 4 with a `Old Password Auth Challenge Packet`_:
+MySQL 4.1+ server also may respond at step 4 with a `Auth Method Switch Request Packet`_:
 
 1. the client connecting to the server
 2. the server responds with the `Auth Challenge Packet`_
 3. the client sends the `Auth Response Packet`_
-4. the server responds with the `Old Password Auth Challenge Packet`_
-5. the client sends the `Old Password Auth Response Packet`_
+4. the server responds with the `Auth Method Switch Request Packet`_
+5. the client sends the `Auth Method Switch Response Packet`_
 6. the server responds with `OK Packet`_ or `ERR Packet`_ and closes the connection
 
 Auth Challenge Packet
@@ -720,6 +720,8 @@ The client answers with a `Auth Response Packet`_.
 
 `character set` is the server's default character set and is defined in `Character Set`_.
 
+The `auth challenge` is concated string of `challenge-part-1` and `challenge-part-2`.
+
 Capability flags
 ................
 
@@ -744,7 +746,7 @@ flags    constant name                   description
 0x1000 CLIENT_IGNORE_SIGPIPE           IGNORE sigpipes
 0x2000 CLIENT_TRANSACTIONS             Client knows about transactions
 0x4000 CLIENT_RESERVED                 Old flag for 4.1 protocol 
-0x8000 CLIENT_SECURE_CONNECTION        New 4.1 authentication
+0x8000 _`CLIENT_SECURE_CONNECTION`     New 4.1 authentication
 ====== ==============================  ==================================
 
 
@@ -766,12 +768,14 @@ If the capabilities have a `CLIENT_PROTOCOL_41`_ flag set the response packet is
       1              character set
       string[23]     reserved
       string         username
-        if capabilities & SECURE_CONNECTION:
+        if capabilities & CLIENT_SECURE_CONNECTION:
       lenenc-str     auth-response
         else:
       string         auth-response
         all:
-      string[p]      database       
+      string         database
+        if capabilities & CLIENT_PLUGIN_AUTH:
+      string         plugin name
 
 If not, it is::
 
@@ -792,44 +796,169 @@ flags      constant name                   description
 0x00010000 _`CLIENT_MULTI_STATEMENTS`      Enable/disable multi-stmt support
 0x00020000 _`CLIENT_MULTI_RESULTS`         Enable/disable multi-results
 0x00040000 _`CLIENT_PS_MULTI_RESULTS`      Multi-results in PS-protocol
+0x00080000 _`CLIENT_PLUGIN_AUTH`           Client supports plugin auth
 0x40000000 CLIENT_SSL_VERIFY_SERVER_CERT
 0x80000000 CLIENT_REMEMBER_OPTIONS
 ========== ==============================  ==================================
 
 `character set` is the connection's default character set and is defined in `Character Set`_.
 
-Old Password Auth Challenge Packet
-----------------------------------
+The `auth-response` is either as defined in `Secure Auth`_ or as in `Old Auth`_ depending on the
+`CLIENT_SECURE_CONNECTION`_, `CLIENT_PROTOCOL_41`_ and `CLIENT_PLUGIN_AUTH`_ capability
 
-In case the server stored a password in the OLD_PASSWORD() fashion for this
-user the client has to use another hash for the password.
+===================== =========================== ===================== =================
+`CLIENT_PROTOCOL_41`_ `CLIENT_SECURE_CONNECTION`_ `CLIENT_PLUGIN_AUTH`_ `Auth Method`_
+===================== =========================== ===================== =================
+no                    ignored                     ignored               `Old Auth`_
+yes                   no                          no                    `Old Auth`_
+yes                   yes                         no                    `Secure Auth`_
+yes                   yes                         yes                   see `plugin name`
+===================== =========================== ===================== =================
+
+Auth Method Switch Request Packet
+---------------------------------
+
+If the server can not or doesn't want to authenticate the client based on the current `Auth Method`_ it can 
+ask to client to switch to another one.
+
+If `CLIENT_PLUGIN_AUTH`_ is set in the clients `Auth Response Packet`_ capabilites the server may send a plugin name
+and additional auth data which is plugin specific.
+
+If `CLIENT_PLUGIN_AUTH`_ was *not* set the `plugin name` is assumed to be the one of the `Old Auth`_ method.
 
 ::
 
-  Old Password Auth Challenge Packet
-    ask the client to send the password hashed with insecure hash-function
+  Auth Method Switch Request Packet
+    ask the client to switch to another auth method
 
     payload:
       1              [fe]
+        if capabilities & CLIENT_PLUGIN_AUTH:
+      string         plugin name
+      string[p]      plugin data              
 
     example:
       01 00 00 02 fe 
 
-Old Password Auth Response Packet
----------------------------------
+Auth Method Switch Response Packet
+----------------------------------
 
 ::
 
-  Old Password Auth Response Packet
-    the password hashed with old, insecure hash-function
+  Auth Method Switch Response Packet
+    the response of the auth plugin
 
     payload:
-      string         auth-response
+      string         auth plugin response
 
     example:
       09 00 00 03 5c 49 4d 5e    4e 58 4f 47 00             ....\IM^NXOG.
   
+The data here is completely dependent on the `plugin name` of the `Auth Method Switch Request Packet`_.
 
+Auth Method
+-----------
+
+Depending on the capability flags the client and server support different authentication methods.
+
+Old Auth
+........
+
++--------------------+
+| plugin name        |
++--------------------+
+| mysql_old_password |
++--------------------+
+
+The server sends a 8 or 20-byte "challenge" as part of the `Auth Challenge Packet`_ and the client returns 
+its password scrambled using the first 8 byte of the "challenge".
+
+.. warning:: The hashing algorithm used for this auth method is *broken* as shown at http://sqlhack.com/ and `CVE-2000-0981`_
+
+.. _`CVE-2000-0981`:  http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2000-0981
+
+For illustration purposes this code snippet from Connector/J's ``/src/com/mysql/jdbc/Util.java``:
+
+.. code-block:: java
+
+  static String newCrypt(String password, String seed) {
+          byte b;
+          double d;
+          
+          if ((password == null) || (password.length() == 0)) {
+                  return password;
+          }
+          
+          long[] pw = newHash(seed);
+          long[] msg = newHash(password);
+          long max = 0x3fffffffL;
+          long seed1 = (pw[0] ^ msg[0]) % max;
+          long seed2 = (pw[1] ^ msg[1]) % max;
+          char[] chars = new char[seed.length()];
+          
+          for (int i = 0; i < seed.length(); i++) {
+                  seed1 = ((seed1 * 3) + seed2) % max;
+                  seed2 = (seed1 + seed2 + 33) % max;
+                  d = (double) seed1 / (double) max;
+                  b = (byte) java.lang.Math.floor((d * 31) + 64);
+                  chars[i] = (char) b;
+          }
+          
+          seed1 = ((seed1 * 3) + seed2) % max;
+          seed2 = (seed1 + seed2 + 33) % max;
+          d = (double) seed1 / (double) max;
+          b = (byte) java.lang.Math.floor(d * 31);
+          
+          for (int i = 0; i < seed.length(); i++) {
+                  chars[i] ^= (char) b;
+          }
+          
+          return new String(chars);
+  }
+  
+  static long[] newHash(String password) {
+          long nr = 1345345333L;
+          long add = 7;
+          long nr2 = 0x12345671L;
+          long tmp;
+  
+          for (int i = 0; i < password.length(); ++i) {
+                  if ((password.charAt(i) == ' ') || (password.charAt(i) == '\t')) {
+                          continue; // skip spaces
+                  }
+  
+                  tmp = (0xff & password.charAt(i));
+                  nr ^= ((((nr & 63) + add) * tmp) + (nr << 8));
+                  nr2 += ((nr2 << 8) ^ nr);
+                  add += tmp;
+          }
+  
+          long[] result = new long[2];
+          result[0] = nr & 0x7fffffffL;
+          result[1] = nr2 & 0x7fffffffL;
+  
+          return result;
+  }
+
+Secure Auth
+...........
+
++-----------------------+
+| plugin name           |
++-----------------------+
+| mysql_native_password |
++-----------------------+
+
+The secure authentication was introduced in MySQL Server 4.1.1 and the server announces it by setting `CLIENT_SECURE_CONNECTION`_ capability flag.
+
+This method fixes a 2 short-comings of the `Old Auth`_:
+
+* using a tested, crypto-graphic hashing function which isn't broken
+* knowning the content of the hash in the ``mysql.user`` table isn't enough to authenticate against the MySQL Server.
+
+The server sends a 20-byte "challenge" as part of the `Auth Challenge Packet`_ and the client returns::
+
+  SHA1( password ) XOR SHA1( challenge + SHA1( SHA1( password ) ) )
 
 Command Phase
 =============
@@ -1510,7 +1639,9 @@ COM_CHANGE_USER changes the user of the current connection and reset the connect
         all:
       string         schema-name
         if more bytes in packet:
-      2              character-set
+      2              character-set (since 5.1.23?)
+        if more bytes in packet:
+      string         auth plugin name (since 5.5.7 and if CLIENT_PLUGIN_AUTH is used)
 
 `character set` is the connection character set and is defined in `Character Set`_.
 
