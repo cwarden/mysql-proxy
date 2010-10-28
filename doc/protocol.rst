@@ -2388,6 +2388,7 @@ ROTATE_EVENT
 ............
 
 ::
+
   ROTATE_EVENT
 
     post-header:
