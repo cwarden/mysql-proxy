@@ -23,6 +23,7 @@
 #define _NETWORK_MYSQLD_BINLOG_H_
 
 #include "network-mysqld-proto.h"
+#include "network-mysqld-table.h"
 
 /**
  * stolen from sql/log_event.h
@@ -98,21 +99,14 @@ enum Log_event_type
  * replication
  */
 
-typedef struct {
-	guint64 table_id;
-
-	GString *db_name;
-	GString *table_name;
-
-	GPtrArray *fields;
-} network_mysqld_table;
-
-NETWORK_API network_mysqld_table *network_mysqld_table_new();
-NETWORK_API void network_mysqld_table_free(network_mysqld_table *tbl);
 NETWORK_API guint64 *guint64_new(guint64 i);
 
 typedef struct {
+	int fd;
+	guint32 log_pos; /* current write-log-pos */
+
 	gchar *filename;
+	enum { BINLOG_MODE_UNSET, BINLOG_MODE_READ, BINLOG_MODE_WRITE } mode;
 
 	/* we have to store some information from the format description event 
 	 */
@@ -133,6 +127,8 @@ typedef struct {
 	guint32 log_pos;
 	guint16 flags;
 
+	GString *raw; /* the byte-stream of the event w/o header */
+
 	union {
 		struct {
 			guint32 thread_id;
@@ -152,8 +148,8 @@ typedef struct {
 			gchar *master_version;
 			guint32 created_ts;
 			guint8  log_header_len;
-			gchar *perm_events;
-			gsize  perm_events_len;
+			gchar *event_header_sizes;
+			gsize  event_header_sizes_len;
 		} format_event;
 		struct {
 			guint32 name_len;
@@ -196,8 +192,7 @@ typedef struct {
 
 			guint32 null_bits_len;
 			
-			guint32 row_len;
-			gchar *row;      /* raw row-buffer in the format:
+			GString *row;    /* raw row-buffer in the format:
 					    [null-bits] [field_0, ...]
 					    [null-bits] [field_0, ...]
 					    */
@@ -211,16 +206,31 @@ typedef struct {
 		struct {
 			guint64 xid_id;
 		} xid;
+		struct {
+			guint16 incident_id;
+			guint8 message_len;
+			gchar *message;
+		} incident;
 	} event;
 } network_mysqld_binlog_event;
 
 NETWORK_API network_mysqld_binlog_event *network_mysqld_binlog_event_new(void);
 NETWORK_API void network_mysqld_binlog_event_free(network_mysqld_binlog_event *event);
+NETWORK_API const char *network_mysqld_binlog_event_get_name(network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_binlog_event_get_id(const char *key, size_t key_len);
 NETWORK_API int network_mysqld_proto_get_binlog_event_header(network_packet *packet, network_mysqld_binlog_event *event);
 NETWORK_API int network_mysqld_proto_get_binlog_event(network_packet *packet, 
 		network_mysqld_binlog *binlog,
 		network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_proto_append_binlog_event_header(GString *packet, network_mysqld_binlog_event *event);
+NETWORK_API int network_mysqld_proto_append_binlog_event(GString *packet, network_mysqld_binlog_event *event);
 NETWORK_API int network_mysqld_proto_get_binlog_status(network_packet *packet);
+NETWORK_API int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filename, const char *mode);
+NETWORK_API int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, network_packet *packet);
+NETWORK_API int network_mysqld_binlog_read_event(network_mysqld_binlog *binlog, 
+		network_packet *packet,
+		goffset event_size);
+NETWORK_API int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_binlog_event *event);
 
 typedef struct {
 	gchar *binlog_file;
@@ -234,8 +244,21 @@ NETWORK_API void network_mysqld_binlog_dump_free(network_mysqld_binlog_dump *dum
 NETWORK_API int network_mysqld_proto_append_binlog_dump(GString *packet, network_mysqld_binlog_dump *dump);
 
 
-NETWORK_API int network_mysqld_binlog_event_tablemap_get(
+/**
+ * functions to convert between table-map-events and our interal table-structure 
+ */
+
+NETWORK_API int network_mysqld_binlog_event_tablemap_to_table(
 		network_mysqld_binlog_event *event,
 		network_mysqld_table *tbl);
+NETWORK_API int network_mysqld_binlog_event_tablemap_to_table_columns(
+		network_mysqld_binlog_event *event,
+		network_mysqld_columns *columns);
+NETWORK_API int network_mysqld_binlog_event_tablemap_from_table(
+		network_mysqld_binlog_event *event,
+		network_mysqld_table *tbl);
+NETWORK_API int network_mysqld_binlog_event_tablemap_from_table_columns(
+		network_mysqld_binlog_event *event,
+		network_mysqld_columns *columns);
 
 #endif

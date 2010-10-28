@@ -431,6 +431,7 @@ AC_CONFIG_FILES([Makefile \
 AC_CONFIG_FILES([plugins/admin/Makefile])
 AC_CONFIG_FILES([plugins/proxy/Makefile])
 AC_CONFIG_FILES([plugins/replicant/Makefile])
+AC_CONFIG_FILES([plugins/master/Makefile])
 dnl cli plugin requires readline, so we disable it for now
 dnl AC_CONFIG_FILES([plugins/cli/Makefile])
 AC_CONFIG_FILES([plugins/debug/Makefile])

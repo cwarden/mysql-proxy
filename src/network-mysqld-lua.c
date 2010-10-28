@@ -827,8 +827,8 @@ int network_mysqld_con_lua_handle_proxy_response(network_mysqld_con *con, const 
 			lua_pop(L, 2 + 1); /* proxy + response + nil */
 
 			return -1;
-		} else if (!lua_istable(L, -1)) {
-			g_message("%s.%d: proxy.response.packets has to be a table, is %s in %s", __FILE__, __LINE__,
+		} else if (!lua_istable(L, -1) && !lua_isfunction(L, -1)) {
+			g_message("%s.%d: proxy.response.packets has to be a table or function, is %s in %s", __FILE__, __LINE__,
 					lua_typename(L, lua_type(L, -1)),
 					lua_script);
 
@@ -836,28 +836,46 @@ int network_mysqld_con_lua_handle_proxy_response(network_mysqld_con *con, const 
 			return -1;
 		}
 
-		for (i = 1; ; i++) {
-			lua_rawgeti(L, -1, i);
+		if (lua_istable(L, -1)) {
+			for (i = 1; ; i++) {
+				lua_rawgeti(L, -1, i);
 
-			if (lua_isstring(L, -1)) { /** proxy.response.packets[i] */
-				str = lua_tolstring(L, -1, &str_len);
+				if (lua_isstring(L, -1)) { /** proxy.response.packets[i] */
+					str = lua_tolstring(L, -1, &str_len);
 
-				network_mysqld_queue_append(con->client, con->client->send_queue,
-						str, str_len);
-	
-				lua_pop(L, 1); /* pop value */
-			} else if (lua_isnil(L, -1)) {
-				lua_pop(L, 1); /* pop the nil and leave the loop */
-				break;
+					network_mysqld_queue_append(con->client, con->client->send_queue, str, str_len);
+		
+					lua_pop(L, 1); /* pop value */
+				} else if (lua_isnil(L, -1)) {
+					lua_pop(L, 1); /* pop the nil and leave the loop */
+					break;
+				} else {
+					g_error("%s.%d: proxy.response.packets should be array of strings, field %u was %s", 
+							__FILE__, __LINE__, 
+							i,
+							lua_typename(L, lua_type(L, -1)));
+				}
+			}
+			lua_pop(L, 1); /* .packets */
+		} else {
+			if (0 != lua_pcall(L, 0, 1, 0)) {
+				g_critical("%s: %s",
+						G_STRLOC,
+						lua_tostring(L, -1));
+
+				lua_pop(L, 1);
 			} else {
-				g_error("%s.%d: proxy.response.packets should be array of strings, field %u was %s", 
-						__FILE__, __LINE__, 
-						i,
-						lua_typename(L, lua_type(L, -1)));
+				if (lua_isstring(L, -1)) {
+					str = lua_tolstring(L, -1, &str_len);
+
+					/* stay in this state and send the data */
+					network_mysqld_queue_append(con->client, con->client->send_queue, str, str_len);
+				} else {
+				}
+				lua_pop(L, 1);
 			}
 		}
 
-		lua_pop(L, 1); /* .packets */
 
 		network_mysqld_queue_reset(con->client); /* reset the packet-id checks */
 

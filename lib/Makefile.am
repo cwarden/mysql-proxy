@@ -57,6 +57,8 @@ chassis_la_LIBADD   = ${GLIB_LIBS} ${top_builddir}/src/libmysql-chassis.la
 mysql_la_SOURCES  = \
 	mysql-proto.c \
 	mysql-password.c \
+	mysql-table.c \
+	mysql-binlog.c \
 	sql-tokenizer.l \
 	sql-tokenizer-tokens.c \
 	sql-tokenizer-keywords.c \
