@@ -1002,10 +1002,10 @@ hex  constant name
 0f   `COM_TIME`_
 10   `COM_DELAYED_INSERT`_
 11   `COM_CHANGE_USER`_
-12   COM_BINLOG_DUMP
+12   `COM_BINLOG_DUMP`_
 13   `COM_TABLE_DUMP`_
 14   `COM_CONNECT_OUT`_
-15   COM_REGISTER_SLAVE
+15   `COM_REGISTER_SLAVE`_
 16   `COM_STMT_PREPARE`_
 17   `COM_STMT_EXECUTE`_
 18   `COM_STMT_SEND_LONG_DATA`_
@@ -2190,4 +2190,437 @@ A fetch may result:
 
 * a `multi-resultset`_
 * a `ERR packet`_
+
+Replication
+===========
+
+COM_REGISTER_SLAVE
+------------------
+
+::
+
+  COM_REGISTER_SLAVE
+    register a slave at the master
+
+    payload:
+      4              server-id
+      lenenc-str     slaves hostname
+      lenenc-str     slaves user
+      lenenc-str     slaves password
+      2              slaves mysql-port
+      4              replication rank
+      4              master-id
+
+`slaves hostname`
+  see `--report-host`_, usually empty
+
+`slaves user`
+  see `--report-user`_, usually empty
+
+`slaves password`
+  see `--report-password`_, usually empty
+
+`slaves port`
+  see `--report-port`_, usually empty
+
+`replication rank`
+  ignored
+
+`server-id`
+  the slaves server-id
+
+`master-id`
+  no idea, usually empty
+  
+
+.. _`--report-host`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-host
+.. _`--report-user`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-user
+.. _`--report-password`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-password
+.. _`--report-port`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-port
+
+COM_BINLOG_DUMP
+---------------
+
+::
+
+  COM_BINLOG_DUMP
+    request a binlog-stream from the server
+
+    payload:
+      4              log-pos
+      2              flags
+      4              server-id
+      string[p]      name of the log-file
+
+
+`flags`
+  can right now has one value:
+
+  ====  =====================
+  flag  descripting
+  ====  =====================
+  01    BINLOG_DUMP_NON_BLOCK
+  ====  =====================
+  
+
+Binlogs
+-------
+
+Binlogs exist in two forms:
+
+* files
+* network stream
+
+Binlog file
+...........
+
+A binlog file starts with a `Binlog File Header` ``[ ff 'bin' ]`` and is followed by a series of `Binlog Event`_ fields.
+
+Binlog stream
+.............
+
+The stream is sent as result of a `COM_BINLOG_DUMP`_ command and starts with a ``00`` and is followed by a series of `Binlog Event`_ fields.
+
+Binlog Event
+------------
+
+A binlog event starts with a `Binlog Event header`_ and is followed by a `Binlog Event Type` specific data part.
+
+Binlog Event header
+...................
+
+::
+
+  Binlog header
+    payload:
+      4              timestamp
+      1              event type
+      4              server-id
+      4              event-size
+      4              log pos
+      2              flags
+
+`timestamp`
+  seconds since unix epoch
+
+`event type`
+  see `Binlog Event Type`_
+
+`server-id`
+  server-id of the originating mysql-server. Used to filter out events in circular replication.
+
+`event-size`
+  size of the event (header, post-header, body)
+
+`log pos`
+  position of the next event
+
+`flags`
+  hmm, let's see
+
+Binlog Event Flag
+.................
+
+=== ====================================  ===========
+hex flag                                  description
+=== ====================================  ===========
+01  LOG_EVENT_BINLOG_IN_USE_F             gets unset in the `FORMAT_DESCRIPTION_EVENT`_ when the file gets closed to detect broken binlogs
+02  LOG_EVENT_FORCED_ROTATE_F             unused
+04  LOG_EVENT_THREAD_SPECIFIC_F           event is thread specific (CREATE TEMPORARY TABLE ...)
+08  LOG_EVENT_SUPPRESS_USE_F              event doesn't need default database to be updated (CREATE DATABASE, ...)
+10  LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F  unused
+20  LOG_EVENT_ARTIFICIAL_F                event is created by the slaves SQL-thread and shouldn't update the master-log pos
+40  LOG_EVENT_RELAY_LOG_F                 event is created by the slaves IO-thread when written to the relay log
+=== ====================================  ===========
+
+Binlog Event Type
+.................
+
+=== =========================
+hex event name               
+=== =========================
+00  `UNKNOWN_EVENT`_
+01  `START_EVENT_V3`_
+02  `QUERY_EVENT`_
+03  `STOP_EVENT`_
+04  `ROTATE_EVENT`_
+05  `INTVAR_EVENT`_
+06  `LOAD_EVENT`_
+07  `SLAVE_EVENT`_
+08  `CREATE_FILE_EVENT`_
+09  `APPEND_BLOCK_EVENT`_
+0a  `EXEC_LOAD_EVENT`_
+0b  `DELETE_FILE_EVENT`_
+0c  `NEW_LOAD_EVENT`_
+0d  `RAND_EVENT`_
+0e  `USER_VAR_EVENT`_
+0f  `FORMAT_DESCRIPTION_EVENT`_
+10  `XID_EVENT`_
+11  `BEGIN_LOAD_QUERY_EVENT`_
+12  `EXECUTE_LOAD_QUERY_EVENT`_
+13  `TABLE_MAP_EVENT`_
+14  `PRE_GA_DELETE_ROWS_EVENT`_
+15  `PRE_GA_UPDATE_ROWS_EVENT`_
+16  `PRE_GA_WRITE_ROWS_EVENT`_
+17  `DELETE_ROWS_EVENT`_
+18  `UPDATE_ROWS_EVENT`_
+19  `WRITE_ROWS_EVENT`_
+1a  `INCIDENT_EVENT`_
+1b  `HEARTBEAT_LOG_EVENT`_
+=== =========================
+
+ignored events
+..............
+
+* _`UNKNOWN_EVENT`
+* _`PRE_GA_DELETE_ROWS_EVENT`
+* _`PRE_GA_UPDATE_ROWS_EVENT`
+* _`PRE_GA_WRITE_ROWS_EVENT`
+* _`SLAVE_EVENT`
+
+START_EVENT_V3
+..............
+
+FORMAT_DESCRIPTION_EVENT
+........................
+
+ROTATE_EVENT
+............
+
+::
+  ROTATE_EVENT
+
+    post-header:
+      8              position
+
+    payload:
+      string[p]      name of the next binlog
+
+
+STOP_EVENT
+..........
+
+A `STOP_EVENT` has no payload or post-header.
+
+QUERY_EVENT
+...........
+
+The query event is used to send text querys right the binlog. 
+
+It has a post-header::
+
+  QUERY_EVENT post header
+  
+    payload:
+      4              slave_proxy_id
+      4              execution time
+      1              schema length
+      2              error-code
+      2              status var length
+
+and a body::
+
+  QUERY_EVENT body
+
+    payload
+      n              status-vars
+      string[n]      schema
+      1              [00]
+      string[p]      query
+
+`status-vars`
+  a sequence of status key-value pairs. The key is 1-byte, while its value is dependent on the key.
+
+  ====  ============================== =========
+  hex   flag                           value-len
+  ====  ============================== =========
+  00    `Q_FLAGS2_CODE`_               4
+  01    `Q_SQL_MODE_CODE`_             8
+  03    `Q_AUTO_INCREMENT`_            2 + 2
+  04    `Q_CHARSET_CODE`_              2 + 2 + 2 
+  05    `Q_TIME_ZONE_CODE`_            1 + n
+  06    `Q_CATALOG_NZ_CODE`_           1 + n
+  07    `Q_LC_TIME_NAMES_CODE`_        2
+  08    `Q_CHARSET_DATABASE_CODE`_     2
+  09    `Q_TABLE_MAP_FOR_UPDATE_CODE`_ 8
+  ====  ============================== =========
+
+  The value of the different status vars are:
+
+  _`Q_FLAGS2_CODE`
+    Bitmask of flags that are usual set with `SET`_:
+    
+    * SQL_AUTO_IS_NULL
+    * FOREIGN_KEY_CHECKS
+    * UNIQUE_CHECKS
+    * AUTOCOMMIT
+
+  _`Q_SQL_MODE_CODE`
+    Bitmask of flags that are usual set with `SET sql_mode`_
+
+  _`Q_AUTO_INCREMENT`
+    2-byte autoincrement-increment and 2-byte autoincrement-offset
+
+    .. note:: only written if the -increment is > 1
+
+  _`Q_CHARSET_CODE`
+    2-byte character_set_client + 2-byte collation_connection + 2-byte collation_server
+
+    See `Connection Character Sets and Collations`_
+  
+  _`Q_TIME_ZONE_CODE`
+    1-byte length + <length> chars of the timezone
+
+    timezone the master is in
+
+    See `MySQL Server Time Zone Support`_
+
+    .. note:: only written length > 0
+   
+  _`Q_CATALOG_NZ_CODE`
+    1-byte length + <length> chars of the catalog
+
+    .. note:: only written length > 0
+
+  _`Q_LC_TIME_NAMES_CODE`
+    `LC_TIME` of the server. Defines how to parse week-, month and day-names in timestamps.
+
+    .. note:: only written if code > 0 (aka "en_US")
+
+  _`Q_CHARSET_DATABASE_CODE`
+    characterset and collation of the schema
+
+  _`Q_TABLE_MAP_FOR_UPDATE_CODE`
+    a 64bit-field ... should only be used in Row Based Replication and multi-table updates
+
+`schema`
+  current schema, length taken from `schema length`
+
+`query`
+  text of the query
+
+.. _`SET`: http://dev.mysql.com/doc/refman/5.1/en/set-option.html
+.. _`SET sql_mode`: http://dev.mysql.com/doc/refman/5.1/en/server-sql-mode.html
+.. _`Connection Character Sets and Collations`: http://dev.mysql.com/doc/refman/5.1/en/charset-connection.html
+.. _`MySQL Server Time Zone Support`: http://dev.mysql.com/doc/refman/5.1/en/time-zone-support.html
+
+LOAD_EVENT
+..........
+
+NEW_LOAD_EVENT
+..............
+
+CREATE_FILE_EVENT
+.................
+
+APPEND_BLOCK_EVENT
+..................
+
+EXEC_LOAD_EVENT
+...............
+
+BEGIN_LOAD_QUERY_EVENT
+......................
+
+EXECUTE_LOAD_QUERY_EVENT
+........................
+
+DELETE_FILE_EVENT
+.................
+
+RAND_EVENT
+..........
+
+Internal state of the ``RAND()`` function.
+
+::
+
+  RAND_EVENT
+    payload:
+      8              seed1
+      8              seed2
+
+XID_EVENT
+.........
+
+Transaction ID for 2PC, written whenever a ``COMMIT`` is expected.
+
+::
+
+  XID_EVENT
+    payload:
+      8              xid
+
+INTVAR_EVENT
+............
+
+Integer based user-variables
+
+::
+
+  INTVAR_EVENT
+    payload:
+      1              type
+      8              value
+
+`type`
+  ====  ====================
+  hex   intvar event type
+  ====  ====================
+  00    INVALID_INT_EVENT
+  01    LAST_INSERT_ID_EVENT
+  02    INSERT_ID_EVENT
+  ====  ====================
+
+USER_VAR_EVENT
+..............
+
+::
+
+  USER_VAR_EVENT
+    payload:
+      string[p]      value
+
+`value`
+  ``@`name`=...``
+
+TABLE_MAP_EVENT
+...............
+
+DELETE_ROWS_EVENT
+.................
+
+UPDATE_ROWS_EVENT
+.................
+
+WRITE_ROWS_EVENT
+................
+
+INCIDENT_EVENT
+..............
+
+::
+
+  INCIDENT_EVENT
+    payload:
+      2              type
+      1              message length
+      n              message
+
+`type`
+  ==== ====================
+  hex  name
+  ==== ====================
+  0000 INCIDENT_NONE
+  0001 INCIDENT_LOST_EVENTS
+  ==== ====================
+
+HEARTBEAT_LOG_EVENT
+...................
+
+A artificial event generated by the master. It isn't written to the relay logs.
+
+It is added by the master after the replication connection was idle for x-seconds to update the slaves ``Seconds_Behind_Master`` timestamp.
+
+It has no payload nor post-header.
 
