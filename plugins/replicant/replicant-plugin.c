@@ -268,7 +268,7 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_handshake) {
 	auth->max_packet_size = 1 * 1024 * 1024;
 
 	if (config->mysqld_username) {
-		g_string_append(auth->username, config->mysqld_username);
+		g_string_assign(auth->username, config->mysqld_username);
 	}
 
 	if (config->mysqld_password) {
@@ -475,7 +475,11 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 						if (st->binlog->filename) g_free(st->binlog->filename);
 
 						st->binlog->filename = g_strdup(event->event.rotate_event.binlog_file);
+						break;
+					default:
+						break;
 					}
+
 					if (config->lua_script && !st->L) {
 						lua_State *L;
 						/* call lua to expose the event */
@@ -714,6 +718,8 @@ NETWORK_MYSQLD_PLUGIN_PROTO(repclient_read_query_result) {
 		st->state = REPCLIENT_BINLOG_ACK_RECV;
 
 		break; }
+	default:
+		break; /* ignore the other states */
 	}
 
 	if (chunk->data) g_string_free(chunk->data, TRUE);
