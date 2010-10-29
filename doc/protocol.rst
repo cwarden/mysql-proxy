@@ -2210,6 +2210,45 @@ Binlogs exist in two forms:
 The first event is either a `START_EVENT_V3`_ or a `FORMAT_DESCRIPTION_EVENT`_ while the last
 event is either a `STOP_EVENT`_ or a `ROTATE_EVENT`_.
 
+Statement Based Replication
+  * `QUERY_EVENT`_
+
+Row Based Replication 
+  * `TABLE_MAP_EVENT`_
+  * `PRE_GA_DELETE_ROWS_EVENT`_
+  * `PRE_GA_UPDATE_ROWS_EVENT`_
+  * `PRE_GA_WRITE_ROWS_EVENT`_
+  * `DELETE_ROWS_EVENT`_
+  * `UPDATE_ROWS_EVENT`_
+  * `WRITE_ROWS_EVENT`_
+
+LOAD INFILE replication
+  * `LOAD_EVENT`_
+  * `CREATE_FILE_EVENT`_
+  * `APPEND_BLOCK_EVENT`_
+  * `EXEC_LOAD_EVENT`_
+  * `DELETE_FILE_EVENT`_
+  * `NEW_LOAD_EVENT`_
+  * `BEGIN_LOAD_QUERY_EVENT`_
+  * `EXECUTE_LOAD_QUERY_EVENT`_
+
+Client Connection State
+  * `INTVAR_EVENT`_
+  * `RAND_EVENT`_
+  * `USER_VAR_EVENT`_
+  * `XID_EVENT`_
+
+Binlog Management
+  * `START_EVENT_V3`_
+  * `FORMAT_DESCRIPTION_EVENT`_
+  * `STOP_EVENT`_
+  * `ROTATE_EVENT`_
+  * `SLAVE_EVENT`_
+  * `INCIDENT_EVENT`_
+  * `HEARTBEAT_LOG_EVENT`_
+
+
+
 Binlog File Header
 ..................
 
