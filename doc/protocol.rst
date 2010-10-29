@@ -2194,97 +2194,37 @@ A fetch may result:
 Replication
 ===========
 
-COM_REGISTER_SLAVE
-------------------
-
-::
-
-  COM_REGISTER_SLAVE
-    register a slave at the master
-
-    payload:
-      4              server-id
-      lenenc-str     slaves hostname
-      lenenc-str     slaves user
-      lenenc-str     slaves password
-      2              slaves mysql-port
-      4              replication rank
-      4              master-id
-
-`slaves hostname`
-  see `--report-host`_, usually empty
-
-`slaves user`
-  see `--report-user`_, usually empty
-
-`slaves password`
-  see `--report-password`_, usually empty
-
-`slaves port`
-  see `--report-port`_, usually empty
-
-`replication rank`
-  ignored
-
-`server-id`
-  the slaves server-id
-
-`master-id`
-  no idea, usually empty
-  
-
-.. _`--report-host`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-host
-.. _`--report-user`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-user
-.. _`--report-password`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-password
-.. _`--report-port`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-port
-
-COM_BINLOG_DUMP
----------------
-
-::
-
-  COM_BINLOG_DUMP
-    request a binlog-stream from the server
-
-    payload:
-      4              log-pos
-      2              flags
-      4              server-id
-      string[p]      name of the log-file
-
-
-`flags`
-  can right now has one value:
-
-  ====  =====================
-  flag  descripting
-  ====  =====================
-  01    BINLOG_DUMP_NON_BLOCK
-  ====  =====================
-  
+Replication uses `binlogs`_ to ship changes done on the master to the slave.
 
 Binlogs
 -------
 
 Binlogs exist in two forms:
 
-* files
-* network stream
+`files`
+  Binlog files start with a `Binlog File Header` followed by a series of `Binlog Event` 
 
-Binlog file
-...........
+`network stream`
+  Network streams start with ``00`` OK-byte followed by a series of `Binlog Events`
 
-A binlog file starts with a `Binlog File Header` ``[ ff 'bin' ]`` and is followed by a series of `Binlog Event`_ fields.
+The first event is either a `START_EVENT_V3`_ or a `FORMAT_DESCRIPTION_EVENT`_ while the last
+event is either a `STOP_EVENT`_ or a `ROTATE_EVENT`_.
 
-Binlog stream
-.............
+Binlog File Header
+..................
 
-The stream is sent as result of a `COM_BINLOG_DUMP`_ command and starts with a ``00`` and is followed by a series of `Binlog Event`_ fields.
+A binlog file starts with a `Binlog File Header` ``[ fe 'bin' ]``::
+
+  $ hexdump -C /tmp/binlog-test.log
+  00000000  fe 62 69 6e 19 6f c9 4c  0f 01 00 00 00 66 00 00  |.bin.o.L.....f..|
+  00000010  00 6a 00 00 00 00 00 04  00 6d 79 73 71 6c 2d 70  |.j.......mysql-p|
+  00000020  72 6f 78 79 2d 30 2e 37  2e 30 00 00 00 00 00 00  |roxy-0.7.0......|
+  ...
 
 Binlog Event
 ------------
 
-A binlog event starts with a `Binlog Event header`_ and is followed by a `Binlog Event Type` specific data part.
+A binlog event starts with a `Binlog Event header`_ and is followed by a `Binlog Event Type`_ specific data part.
 
 Binlog Event header
 ...................
@@ -2316,22 +2256,69 @@ Binlog Event header
   position of the next event
 
 `flags`
-  hmm, let's see
+  see `Binlog Event Flag`_
+
+Splitting an example (skipping the `Binlog File Header`_) ::
+
+  $ hexdump -s 4 -C relay-bin.000001
+  00000004  82 2d c2 4b 0f 02 00 00  00 67 00 00 00 6b 00 00  |.-.K.....g...k..|
+  00000014  00 00 00 04 00 35 2e 35  2e 32 2d 6d 32 00 00 00  |.....5.5.2-m2...|
+  ...
+
+``82 2d c2 4b``
+  timestamp
+
+``0f``
+  a `FORMAT_DESCRIPTION_EVENT`_
+
+``02 00 00 00``
+  server-id = 1
+
+``67 00 00 00``
+  ``66`` is 102 bytes 
+
+``6b 00 00 00``
+  the next event starts at offset 106 (last offset + size)
+
+``00 00``
+  no flags set
 
 Binlog Event Flag
 .................
 
-=== ====================================  ===========
-hex flag                                  description
-=== ====================================  ===========
-01  LOG_EVENT_BINLOG_IN_USE_F             gets unset in the `FORMAT_DESCRIPTION_EVENT`_ when the file gets closed to detect broken binlogs
-02  LOG_EVENT_FORCED_ROTATE_F             unused
-04  LOG_EVENT_THREAD_SPECIFIC_F           event is thread specific (CREATE TEMPORARY TABLE ...)
-08  LOG_EVENT_SUPPRESS_USE_F              event doesn't need default database to be updated (CREATE DATABASE, ...)
-10  LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F  unused
-20  LOG_EVENT_ARTIFICIAL_F                event is created by the slaves SQL-thread and shouldn't update the master-log pos
-40  LOG_EVENT_RELAY_LOG_F                 event is created by the slaves IO-thread when written to the relay log
-=== ====================================  ===========
+=== =======================================
+hex flag
+=== =======================================
+01  `LOG_EVENT_BINLOG_IN_USE_F`_
+02  `LOG_EVENT_FORCED_ROTATE_F`_
+04  `LOG_EVENT_THREAD_SPECIFIC_F`_
+08  `LOG_EVENT_SUPPRESS_USE_F`_
+10  `LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F`_
+20  `LOG_EVENT_ARTIFICIAL_F`_
+40  `LOG_EVENT_RELAY_LOG_F`_
+=== =======================================
+
+_`LOG_EVENT_BINLOG_IN_USE_F`
+  gets unset in the `FORMAT_DESCRIPTION_EVENT`_ when the file gets closed to detect broken binlogs
+
+_`LOG_EVENT_FORCED_ROTATE_F`
+  unused
+
+_`LOG_EVENT_THREAD_SPECIFIC_F`
+  event is thread specific (CREATE TEMPORARY TABLE ...)
+
+_`LOG_EVENT_SUPPRESS_USE_F`
+  event doesn't need default database to be updated (CREATE DATABASE, ...)
+
+_`LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F`
+  unused
+
+_`LOG_EVENT_ARTIFICIAL_F`
+  event is created by the slaves SQL-thread and shouldn't update the master-log pos
+
+_`LOG_EVENT_RELAY_LOG_F`
+  event is created by the slaves IO-thread when written to the relay log
+
 
 Binlog Event Type
 .................
@@ -2381,11 +2368,149 @@ ignored events
 START_EVENT_V3
 ..............
 
+A start event is the first event of a binlog for binlog-version 1 to 3.
+
+::
+
+  START_EVENT_V3
+
+  payload:
+    2                binlog-version
+    string[50]       mysql-server version 
+    4                create timestamp
+
+
 FORMAT_DESCRIPTION_EVENT
 ........................
 
+A format description event is the first event of a binlog for binlog-version 4. It describes how the other events are layed out.
+
+.. note:: added in MySQL 5.0.0 as replacement for `START_EVENT_V3`_
+
+::
+
+  FORMAT_DESCRIPTION_EVENT
+
+  payload:
+    2                binlog-version
+    string[50]       mysql-server version 
+    4                create timestamp
+    1                event header length
+    string[p]        event type header lengths
+
+  example:
+    $ hexdump -v -s 4 -C relay-bin.000001
+    00000004  82 2d c2 4b 0f 02 00 00  00 67 00 00 00 6b 00 00  |.-.K.....g...k..|
+    00000014  00 00 00 04 00 35 2e 35  2e 32 2d 6d 32 00 00 00  |.....5.5.2-m2...|
+    00000024  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
+    00000034  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
+    00000044  00 00 00 00 00 00 00 82  2d c2 4b 13 38 0d 00 08  |........-.K.8...|
+    00000054  00 12 00 04 04 04 04 12  00 00 54 00 04 1a 08 00  |..........T.....|
+    00000064  00 00 08 08 08 02 00                              |........        |
+
+`binlog-version`
+  version of this binlog format.
+
+  ==== =============
+  ver  MySQL Version
+  ==== =============
+  1    MySQL 3.23  - < 4.1.0
+  2    MySQL 4.1.0 - 4.1.1
+  3    MySQL 4.1.2 - < 5.0.0
+  4    MySQL 5.0.0+
+  ==== =============
+
+`mysql-server version`
+  version of the MySQL Server that created the binlog. The string is evaluted to apply work-arounds in the slave.
+
+`create timestamp`
+  seconds since Unix epoch when the binlog was created
+
+`event header length`
+  length of the `Binlog Event Header`_ of next events. Should always be 19.
+
+`event type header length`
+  a array indexed by `Binlog Event Type` - 1 to extract the length of the event specific header.
+
+For `mysql-5.5.2-m2` the event specific header lengths are:
+
+.. table:: event type header lengths by binlog-version
+
+  +-----------------------------+-----------------+
+  | event name                  | header-len      |
+  |                             +-----+-----+-----+
+  |                             | v=4 | v=3 | v=1 |
+  +=============================+=====+=====+=====+
+  | `Binlog Event Header`_      |     19    | 13  | 
+  +-----------------------------+-----------+-----+
+  | `START_EVENT_V3`_           |       56        | 
+  +-----------------------------+-----+-----------+
+  | `QUERY_EVENT`_              | 13  |     11    | 
+  +-----------------------------+-----+-----------+
+  | `STOP_EVENT`_               |  0              | 
+  +-----------------------------+-----------+-----+
+  | `ROTATE_EVENT`_             |      8    |  0  | 
+  +-----------------------------+-----------+-----+
+  | `INTVAR_EVENT`_             |         0       | 
+  +-----------------------------+-----------------+
+  | `LOAD_EVENT`_               |        18       | 
+  +-----------------------------+-----------------+
+  | `SLAVE_EVENT`_              |         0       | 
+  +-----------------------------+-----------------+
+  | `CREATE_FILE_EVENT`_        |         4       | 
+  +-----------------------------+-----------------+
+  | `APPEND_BLOCK_EVENT`_       |         4       | 
+  +-----------------------------+-----------------+
+  | `EXEC_LOAD_EVENT`_          |         4       | 
+  +-----------------------------+-----------------+
+  | `DELETE_FILE_EVENT`_        |         4       | 
+  +-----------------------------+-----------------+
+  | `NEW_LOAD_EVENT`_           |        18       | 
+  +-----------------------------+-----------------+
+  | `RAND_EVENT`_               |         0       | 
+  +-----------------------------+-----------------+
+  | `USER_VAR_EVENT`_           |         0       | 
+  +-----------------------------+-----+-----------+
+  | `FORMAT_DESCRIPTION_EVENT`_ | 84  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `XID_EVENT`_                |  0  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `BEGIN_LOAD_QUERY_EVENT`_   |  4  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `EXECUTE_LOAD_QUERY_EVENT`_ | 26  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `TABLE_MAP_EVENT`_          |  8  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `PRE_GA_DELETE_ROWS_EVENT`_ |  0  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `PRE_GA_UPDATE_ROWS_EVENT`_ |  0  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `PRE_GA_WRITE_ROWS_EVENT`_  |  0  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `DELETE_ROWS_EVENT`_        | 8/6 |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `UPDATE_ROWS_EVENT`_        | 8/6 |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `WRITE_ROWS_EVENT`_         | 8/6 |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `INCIDENT_EVENT`_           |  2  |    ---    | 
+  +-----------------------------+-----+-----------+
+  | `HEARTBEAT_LOG_EVENT`_      |  0  |    ---    | 
+  +-----------------------------+-----+-----------+
+
+
+The event-size of ``0x67 (103)`` minus the event-header length of ``0x13 (19)`` should match the event type header length of the `FORMAT_DESCRIPTION_EVENT`_ ``0x54 (84)``.
+
+The number of events understood by the master may differ from what the slave supports. It is calculated by::
+
+  event-size - event-header length - 2 - 50 - 4 - 1
+
+For ``mysql-5.5.2-m2`` it is ``0x1b (27)``.
+
 ROTATE_EVENT
 ............
+
+The rotate event is added to the binlog as last event to tell the reader what binlog to request next.
 
 ::
 
@@ -2624,4 +2749,85 @@ A artificial event generated by the master. It isn't written to the relay logs.
 It is added by the master after the replication connection was idle for x-seconds to update the slaves ``Seconds_Behind_Master`` timestamp.
 
 It has no payload nor post-header.
+
+COM_REGISTER_SLAVE
+------------------
+
+Registers a slave at the master. Should be sent before requesting a binlog events with `COM_BINLOG_DUMP`_.
+
+::
+
+  COM_REGISTER_SLAVE
+    register a slave at the master
+
+    payload:
+      4              server-id
+      lenenc-str     slaves hostname
+      lenenc-str     slaves user
+      lenenc-str     slaves password
+      2              slaves mysql-port
+      4              replication rank
+      4              master-id
+
+`slaves hostname`
+  see `--report-host`_, usually empty
+
+`slaves user`
+  see `--report-user`_, usually empty
+
+`slaves password`
+  see `--report-password`_, usually empty
+
+`slaves port`
+  see `--report-port`_, usually empty
+
+`replication rank`
+  ignored
+
+`server-id`
+  the slaves server-id
+
+`master-id`
+  usually 0. Appears as "master id" in `SHOW SLAVE HOSTS`_ on the master. Unknown what else it impacts.
+  
+
+.. _`--report-host`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-host
+.. _`--report-user`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-user
+.. _`--report-password`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-password
+.. _`--report-port`: http://dev.mysql.com/doc/refman/5.0/en/replication-options-slave.html#option_mysqld_report-port
+.. _`SHOW SLAVE HOSTS`: http://dev.mysql.com/doc/refman/5.1/en/show-slave-hosts.html
+
+COM_BINLOG_DUMP
+---------------
+
+Request a binlog-stream from the master.
+
+Master responds with ``00`` and followed by at least one `Binlog Event`_ or with a `ERR packet`_.
+
+You can use `SHOW MASTER LOGS` to get the current logfile and position from the master.
+
+::
+
+  COM_BINLOG_DUMP
+    request a binlog-stream from the server
+
+    payload:
+      4              binlog-pos
+      2              flags
+      4              server-id
+      string[p]      name of the binlog-file
+
+
+`flags`
+  can right now has one value:
+
+  ====  ========================
+  flag  descripting
+  ====  ========================
+  01    `BINLOG_DUMP_NON_BLOCK`_
+  ====  ========================
+
+_`BINLOG_DUMP_NON_BLOCK`
+  if there is no more event to send send a `EOF packet`_
+
 
