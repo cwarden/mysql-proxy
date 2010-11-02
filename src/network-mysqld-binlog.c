@@ -185,7 +185,7 @@ int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_b
 		g_critical("%s", G_STRLOC);
 		return -1;
 	} else if (r < header->len) {
-		g_critical("%s: wrote = %d, wanted to write: %d", 
+		g_critical("%s: wrote = %"G_GSSIZE_FORMAT", wanted to write: %"G_GSIZE_FORMAT, 
 				G_STRLOC,
 				r,
 				header->len);
@@ -202,7 +202,7 @@ int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_b
 		g_critical("%s", G_STRLOC);
 		return -1;
 	} else if (r < packet->len) {
-		g_critical("%s: wrote = %d, wanted to write: %d", 
+		g_critical("%s: wrote = %"G_GSSIZE_FORMAT", wanted to write: %"G_GSIZE_FORMAT, 
 				G_STRLOC,
 				r,
 				packet->len);
@@ -213,7 +213,15 @@ int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_b
 	return 0;
 }
 
+/**
+ * read the header of a binlog event from the current file position
+ *
+ * @param binlog a open binlog file
+ * @param packet packet
+ */
 int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, network_packet *packet) {
+	g_string_set_size(packet->data, 19);
+
 	if (19 == (packet->data->len = read(binlog->fd, packet->data->str, 19))) {
 		return 0;
 	} else {
@@ -221,10 +229,19 @@ int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, netwo
 	}
 }
 
+/**
+ * read the post-header and payload of a event
+ *
+ * the packet has to already contain the event-header
+ *
+ * @see network_mysqld_binlog_read_event_header()
+ */
 int network_mysqld_binlog_read_event(network_mysqld_binlog *binlog, 
 		network_packet *packet,
-		goffset event_size) {
+		guint32 event_size) {
 	gssize len;
+
+	g_return_val_if_fail(event_size >= 19, -1);
 
 	g_string_set_size(packet->data, event_size); /* resize the string */
 	packet->data->len = 19;

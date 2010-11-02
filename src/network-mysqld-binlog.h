@@ -229,7 +229,7 @@ NETWORK_API int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const 
 NETWORK_API int network_mysqld_binlog_read_event_header(network_mysqld_binlog *binlog, network_packet *packet);
 NETWORK_API int network_mysqld_binlog_read_event(network_mysqld_binlog *binlog, 
 		network_packet *packet,
-		goffset event_size);
+		guint32 event_size);
 NETWORK_API int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_binlog_event *event);
 
 typedef struct {

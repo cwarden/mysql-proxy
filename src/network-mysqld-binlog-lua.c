@@ -642,7 +642,7 @@ static int lua_mysqld_binlog_event_decode(lua_State *L) {
 
 typedef struct {
 	network_mysqld_binlog *binlog;
-	goffset off;
+	guint32 off;
 	network_packet packet;
 } network_mysqld_binlog_iter;
 
@@ -670,7 +670,7 @@ static int lua_mysqld_binlog_next_event(lua_State *L) {
 	}
 
 	if (iter->off + event->event_size != event->log_pos) {
-		g_critical("%s: binlog-pos=%lld is invalid, expected = %"G_GUINT32_FORMAT,
+		g_critical("%s: binlog-pos=%"G_GUINT32_FORMAT" is invalid, expected = %"G_GUINT32_FORMAT,
 			G_STRLOC,
 			iter->off + event->event_size,
 			event->log_pos);
