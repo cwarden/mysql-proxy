@@ -2194,60 +2194,13 @@ A fetch may result:
 Replication
 ===========
 
-Replication uses `binlogs`_ to ship changes done on the master to the slave.
+Replication uses binlogs to ship changes done on the master to the slave and can be written to `Binlog File`_ and
+sent over the network as `Binlog Network Stream`_.
 
-Binlogs
--------
+Binlog File
+-----------
 
-Binlogs exist in two forms:
-
-`files`
-  Binlog files start with a `Binlog File Header` followed by a series of `Binlog Event` 
-
-`network stream`
-  Network streams start with ``00`` OK-byte followed by a series of `Binlog Events`
-
-The first event is either a `START_EVENT_V3`_ or a `FORMAT_DESCRIPTION_EVENT`_ while the last
-event is either a `STOP_EVENT`_ or a `ROTATE_EVENT`_.
-
-Statement Based Replication
-  * `QUERY_EVENT`_
-
-Row Based Replication 
-  * `TABLE_MAP_EVENT`_
-  * `PRE_GA_DELETE_ROWS_EVENT`_
-  * `PRE_GA_UPDATE_ROWS_EVENT`_
-  * `PRE_GA_WRITE_ROWS_EVENT`_
-  * `DELETE_ROWS_EVENT`_
-  * `UPDATE_ROWS_EVENT`_
-  * `WRITE_ROWS_EVENT`_
-
-LOAD INFILE replication
-  * `LOAD_EVENT`_
-  * `CREATE_FILE_EVENT`_
-  * `APPEND_BLOCK_EVENT`_
-  * `EXEC_LOAD_EVENT`_
-  * `DELETE_FILE_EVENT`_
-  * `NEW_LOAD_EVENT`_
-  * `BEGIN_LOAD_QUERY_EVENT`_
-  * `EXECUTE_LOAD_QUERY_EVENT`_
-
-Client Connection State
-  * `INTVAR_EVENT`_
-  * `RAND_EVENT`_
-  * `USER_VAR_EVENT`_
-  * `XID_EVENT`_
-
-Binlog Management
-  * `START_EVENT_V3`_
-  * `FORMAT_DESCRIPTION_EVENT`_
-  * `STOP_EVENT`_
-  * `ROTATE_EVENT`_
-  * `SLAVE_EVENT`_
-  * `INCIDENT_EVENT`_
-  * `HEARTBEAT_LOG_EVENT`_
-
-
+Binlog files start with a `Binlog File Header`_ followed by a series of `Binlog Event`_
 
 Binlog File Header
 ..................
@@ -2260,8 +2213,64 @@ A binlog file starts with a `Binlog File Header` ``[ fe 'bin' ]``::
   00000020  72 6f 78 79 2d 30 2e 37  2e 30 00 00 00 00 00 00  |roxy-0.7.0......|
   ...
 
+Binlog Network Stream
+---------------------
+
+Network streams are requested with `COM_BINLOG_DUMP`_ and prepend each `Binlog Event`_ with ``00`` OK-byte.
+
 Binlog Event
 ------------
+
+The events contain the actual data that should be shipped from the master to the slave. Depending
+on the use, different events are sent.
+
+Binlog Management
+  The first event is either a `START_EVENT_V3`_ or a `FORMAT_DESCRIPTION_EVENT`_ while the last
+  event is either a `STOP_EVENT`_ or a `ROTATE_EVENT`_.
+
+  * `START_EVENT_V3`_
+  * `FORMAT_DESCRIPTION_EVENT`_
+  * `STOP_EVENT`_
+  * `ROTATE_EVENT`_
+  * `SLAVE_EVENT`_
+  * `INCIDENT_EVENT`_
+  * `HEARTBEAT_LOG_EVENT`_
+
+_`Statement Based Replication`
+  Statement Based Replication or SBR sends the SQL queries a client sent to the master AS IS to the slave.
+  It needs extra events to mimik the client connection's state on the slave side. 
+
+  * `QUERY_EVENT`_
+  * `INTVAR_EVENT`_
+  * `RAND_EVENT`_
+  * `USER_VAR_EVENT`_
+  * `XID_EVENT`_
+
+_`Row Based Replication` 
+  In Row Based replication the changed rows are sent to the slave which removes side-effects and makes
+  it more reliable. Now all statements can be sent with RBR though. Most of the time you will see
+  RBR and SBR side by side.
+
+  * `TABLE_MAP_EVENT`_
+  * `PRE_GA_DELETE_ROWS_EVENT`_
+  * `PRE_GA_UPDATE_ROWS_EVENT`_
+  * `PRE_GA_WRITE_ROWS_EVENT`_
+  * `DELETE_ROWS_EVENT`_
+  * `UPDATE_ROWS_EVENT`_
+  * `WRITE_ROWS_EVENT`_
+
+LOAD INFILE replication
+  ``LOAD DATA|XML INFILE`` is a special SQL statement as it has to ship the files over to the slave too to execute
+  the statement.
+
+  * `LOAD_EVENT`_
+  * `CREATE_FILE_EVENT`_
+  * `APPEND_BLOCK_EVENT`_
+  * `EXEC_LOAD_EVENT`_
+  * `DELETE_FILE_EVENT`_
+  * `NEW_LOAD_EVENT`_
+  * `BEGIN_LOAD_QUERY_EVENT`_
+  * `EXECUTE_LOAD_QUERY_EVENT`_
 
 A binlog event starts with a `Binlog Event header`_ and is followed by a `Binlog Event Type`_ specific data part.
 
@@ -2656,7 +2665,7 @@ and a body::
     characterset and collation of the schema
 
   _`Q_TABLE_MAP_FOR_UPDATE_CODE`
-    a 64bit-field ... should only be used in Row Based Replication and multi-table updates
+    a 64bit-field ... should only be used in `Row Based Replication`_ and multi-table updates
 
 `schema`
   current schema, length taken from `schema length`
@@ -2752,6 +2761,71 @@ USER_VAR_EVENT
 TABLE_MAP_EVENT
 ...............
 
+The first event used in `Row Based Replication`_ declares how a table that is about to be changed is defined.
+
+::
+
+  TABLE_MAP_EVENT
+
+    post-header:
+      6              table id
+      2              flags
+
+    payload:
+      1              schema name length
+      string         schema name
+      1              table name length
+      string         table name
+      lenenc-str     column-def
+      lenenc-str     column-meta-def
+      n              NULL-bitmask, length: (column-length * 8) / 7
+
+`column-def`
+  the column definitions. It is sent as length encoded string where the length of the string
+  is the number of columns and each byte of it is the `column type`_ of the column.
+
+`column-meta-def`
+  type specific meta-data for each column
+
+  ======================== ========
+  type                     meta-len
+  ------------------------ --------
+  `MYSQL_TYPE_STRING`_     2
+  `MYSQL_TYPE_VAR_STRING`_ 2
+  `MYSQL_TYPE_VARCHAR`_    2
+  `MYSQL_TYPE_BLOB`_       1
+  `MYSQL_TYPE_DECIMAL`_    2
+  `MYSQL_TYPE_NEWDECIMAL`_ 2
+  `MYSQL_TYPE_DOUBLE`_     1
+  `MYSQL_TYPE_FLOAT`_      1
+  `MYSQL_TYPE_ENUM`_       2
+  `MYSQL_TYPE_SET`_        see `MYSQL_TYPE_ENUM`
+  `MYSQL_TYPE_BIT`_        0
+  `MYSQL_TYPE_DATE`_       0
+  `MYSQL_TYPE_DATETIME`_   0
+  `MYSQL_TYPE_TIMESTAMP`_  0
+  `MYSQL_TYPE_TIME`_       --
+  `MYSQL_TYPE_TINY`_       0
+  `MYSQL_TYPE_SHORT`_      0
+  `MYSQL_TYPE_INT24`_      0
+  `MYSQL_TYPE_LONG`_       0
+  `MYSQL_TYPE_LONGLONG`_   0
+  ======================== ========
+
+  `MYSQL_TYPE_STRING`
+    due to `Bug37426`_ layout of the string meta-data is a bit tightly packed::
+
+      1              byte0
+      1              byte1
+
+    The two bytes encode `type` and `length`
+
+    .. _`Bug37426`: http://bugs.mysql.com/37426
+
+`NULL-bitmap`
+  a bitmask contained a bit set for each column that can be NULL. The column-length is taken from the
+  `column-def`
+
 DELETE_ROWS_EVENT
 .................
 
@@ -2785,9 +2859,11 @@ HEARTBEAT_LOG_EVENT
 
 A artificial event generated by the master. It isn't written to the relay logs.
 
-It is added by the master after the replication connection was idle for x-seconds to update the slaves ``Seconds_Behind_Master`` timestamp.
+It is added by the master after the replication connection was idle for x-seconds to update the slaves ``Seconds_Behind_Master`` timestamp in the `SHOW SLAVE STATUS`_.
 
 It has no payload nor post-header.
+
+.. _`SHOW SLAVE STATUS`: http://dev.mysql.com/doc/refman/5.1/de/show-slave-status.html
 
 COM_REGISTER_SLAVE
 ------------------
@@ -2839,11 +2915,15 @@ Registers a slave at the master. Should be sent before requesting a binlog event
 COM_BINLOG_DUMP
 ---------------
 
-Request a binlog-stream from the master.
+Requests a `binlog network stream`_ from the master starting a given position.
 
-Master responds with ``00`` and followed by at least one `Binlog Event`_ or with a `ERR packet`_.
+You can use `SHOW MASTER LOGS`_ to get the current logfile and position from the master.
 
-You can use `SHOW MASTER LOGS` to get the current logfile and position from the master.
+The master responds either with a
+
+* `binlog network stream`_
+* a `ERR packet`_
+* or (if `BINLOG_DUMP_NON_BLOCK`_ is set) with `EOF packet`_
 
 ::
 
@@ -2861,12 +2941,68 @@ You can use `SHOW MASTER LOGS` to get the current logfile and position from the 
   can right now has one value:
 
   ====  ========================
-  flag  descripting
+  flag  description
   ====  ========================
-  01    `BINLOG_DUMP_NON_BLOCK`_
+  01    _`BINLOG_DUMP_NON_BLOCK`
   ====  ========================
 
-_`BINLOG_DUMP_NON_BLOCK`
-  if there is no more event to send send a `EOF packet`_
+  `BINLOG_DUMP_NON_BLOCK`_
+    if there is no more event to send send a `EOF packet`_ instead of blocking the connection
+
+`server-id`
+  server id of this slave
+
+`binlog-filename`
+  filename of the binlog on the master
+
+`binlog-pos`
+  position in the binlog-file to start the stream with
+
+.. _`SHOW MASTER LOGS`: http://dev.mysql.com/doc/refman/5.1/en/show-master-logs.html
+
+Semi-Sync Replication
+=====================
+
+In MySQL 5.5 replication plugins can be loaded by the master and the slave and the semi-sync plugin is one of them.
+
+The slave requests semi-sync replication by sending:
+
+.. code-block:: sql
+
+  SHOW VARIABLES LIKE 'rpl_semi_sync_master_enabled';
+  SET @rpl_semi_sync_slave = 1;
+
+which the master either responds with a `OK packet`_ if it supports semi-sync replication or with `ERR packet`_ if it doesn't.
+  
+Semi Sync Binlog Event
+----------------------
+
+After the ``00`` OK-byte of a `binlog network stream`_ 2 bytes get added before the normal `Binlog Event`_ continues.
+
+  1                  [ef] semi-sync indicator
+  1                  semi-sync flags
+
+`semi-sync flags`
+  ==== ====================
+  flag description 
+  ==== ====================
+  01   _`SEMI_SYNC_ACK_REQ`
+  ==== ====================
+
+  If the `SEMI_SYNC_ACK_REQ`_ flag is set the master waits for a `Semi Sync ACK packet`_ from the slave before it sends the
+  next event.
+
+Semi Sync ACK packet
+--------------------
+
+Each `Semi Sync Binlog Event`_ with the `SEMI_SYNC_ACK_REQ`_ flag set the slave has to acknowledge with Semi-Sync ACK packet::
+
+  SEMI_SYNC_ACK
+    payload:
+      1                  [ef]
+      8                  log position
+      string             log filename
+
+which the master acknowledges with a `OK packet`_ or a `ERR packet`_.
 
 
