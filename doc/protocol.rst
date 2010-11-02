@@ -2218,6 +2218,49 @@ Binlog Network Stream
 
 Network streams are requested with `COM_BINLOG_DUMP`_ and prepend each `Binlog Event`_ with ``00`` OK-byte.
 
+Binlog Version
+--------------
+
+Depending on the MySQL Version that created the binlog the format is slightly different. Four versions are currently known:
+
+.. table:: Binlog Versions
+
+  ==== =============
+  ver  MySQL Version
+  ==== =============
+  1    MySQL 3.23  - < 4.0.0
+  2    MySQL 4.0.0 - 4.0.1
+  3    MySQL 4.0.2 - < 5.0.0
+  4    MySQL 5.0.0+
+  ==== =============
+
+Version 1
+  supported `statement based replication`_
+
+Version 2
+  can be ignored as it was only used in early alpha versions of MySQL 4.1.x and won't be documented here
+
+Version 3
+  added the relay logs and changed the meaning of the log position
+
+Version 4
+  added the `FORMAT_DESCRIPTION_EVENT`_ and made the protocol extensible 
+
+  In MySQL 5.1.x the `Row Based Replication`_ events were added.
+
+Determining the Binlog Version
+..............................
+
+By the time you read the first event from the log you don't know what `binlog version`_ the binlog has.
+To determine the version correctly it has to be checked if the first event is:
+
+* a `FORMAT_DESCRIPTION_EVENT`_ version = 4
+* a `START_EVENT_V3`_ 
+
+  * if `event-size` == 13 + 56: version = 1
+  * if `event-size` == 19 + 56: version = 3
+  * otherwise: invalid
+
 Binlog Event
 ------------
 
@@ -2277,6 +2320,8 @@ A binlog event starts with a `Binlog Event header`_ and is followed by a `Binlog
 Binlog Event header
 ...................
 
+The binlog event header starts each event and is either 13 or 19 bytes long, depending on the `binlog version`_.
+
 ::
 
   Binlog header
@@ -2285,6 +2330,7 @@ Binlog Event header
       1              event type
       4              server-id
       4              event-size
+         if binlog-version > 1:
       4              log pos
       2              flags
 
@@ -2306,30 +2352,6 @@ Binlog Event header
 `flags`
   see `Binlog Event Flag`_
 
-Splitting an example (skipping the `Binlog File Header`_) ::
-
-  $ hexdump -s 4 -C relay-bin.000001
-  00000004  82 2d c2 4b 0f 02 00 00  00 67 00 00 00 6b 00 00  |.-.K.....g...k..|
-  00000014  00 00 00 04 00 35 2e 35  2e 32 2d 6d 32 00 00 00  |.....5.5.2-m2...|
-  ...
-
-``82 2d c2 4b``
-  timestamp
-
-``0f``
-  a `FORMAT_DESCRIPTION_EVENT`_
-
-``02 00 00 00``
-  server-id = 1
-
-``67 00 00 00``
-  ``66`` is 102 bytes 
-
-``6b 00 00 00``
-  the next event starts at offset 106 (last offset + size)
-
-``00 00``
-  no flags set
 
 Binlog Event Flag
 .................
@@ -2459,15 +2481,6 @@ A format description event is the first event of a binlog for binlog-version 4. 
 `binlog-version`
   version of this binlog format.
 
-  ==== =============
-  ver  MySQL Version
-  ==== =============
-  1    MySQL 3.23  - < 4.1.0
-  2    MySQL 4.1.0 - 4.1.1
-  3    MySQL 4.1.2 - < 5.0.0
-  4    MySQL 5.0.0+
-  ==== =============
-
 `mysql-server version`
   version of the MySQL Server that created the binlog. The string is evaluted to apply work-arounds in the slave.
 
@@ -2565,6 +2578,7 @@ The rotate event is added to the binlog as last event to tell the reader what bi
   ROTATE_EVENT
 
     post-header:
+        if binlog-version > 1:
       8              position
 
     payload:
@@ -2590,7 +2604,8 @@ It has a post-header::
       4              execution time
       1              schema length
       2              error-code
-      2              status var length
+        if binlog-version >= 4:
+      2              status-vars length
 
 and a body::
 
@@ -2601,6 +2616,9 @@ and a body::
       string[n]      schema
       1              [00]
       string[p]      query
+
+`status-vars length`
+  number of bytes in the following sequence of `status-vars`
 
 `status-vars`
   a sequence of status key-value pairs. The key is 1-byte, while its value is dependent on the key.
@@ -2963,13 +2981,23 @@ The master responds either with a
 Semi-Sync Replication
 =====================
 
-In MySQL 5.5 replication plugins can be loaded by the master and the slave and the semi-sync plugin is one of them.
+In MySQL 5.5 replication can optionally be made semi-synchronous instead of the traditionally asynchronous replication.
+
+The clients COMMIT (or in auto-commit mode the current statement) waits until _one_ slave acknowledged that it received (not 
+neccesarilly executed) the transaction or a timeout is reached. In case the timeout is reached, semi-sync replication is disabled.
+
+See http://dev.mysql.com/doc/refman/5.5/en/replication-semisync.html for more.
+
+To see of the master supports semi-sync replication run:
+
+.. code-block:: sql
+
+  SHOW VARIABLES LIKE 'rpl_semi_sync_master_enabled';
 
 The slave requests semi-sync replication by sending:
 
 .. code-block:: sql
 
-  SHOW VARIABLES LIKE 'rpl_semi_sync_master_enabled';
   SET @rpl_semi_sync_slave = 1;
 
 which the master either responds with a `OK packet`_ if it supports semi-sync replication or with `ERR packet`_ if it doesn't.
