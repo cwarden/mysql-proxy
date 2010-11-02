@@ -1271,7 +1271,7 @@ static int lua_mysqld_binlog_seek(lua_State *L) {
 	binlog->log_pos = off;
 	if (binlog->fd != -1) {
 		if (binlog->log_pos != lseek(binlog->fd, binlog->log_pos, SEEK_SET)) {
-			luaL_error(L, "binlog.seek(%"G_GOFFSET_FORMAT") failed ... somehow: %s (%d)",
+			luaL_error(L, "binlog.seek(%"G_GUINT32_FORMAT") failed ... somehow: %s (%d)",
 					binlog->log_pos,
 					g_strerror(errno),
 					errno);
