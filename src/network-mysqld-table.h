@@ -20,6 +20,11 @@
 #ifndef _NETWORK_MYSQLD_TABLE_H_
 #define _NETWORK_MYSQLD_TABLE_H_
 
+#ifdef _WIN32
+/* mysql.h needs SOCKET defined */
+#include <winsock2.h>
+#endif
+
 #include <glib.h>
 #include <mysql.h> /* enum field_types */
 
