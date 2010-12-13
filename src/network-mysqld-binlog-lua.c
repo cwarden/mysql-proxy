@@ -38,6 +38,7 @@
 #include <errno.h>
 
 #include "network-mysqld-binlog.h"
+#include "network-mysqld-binlog-lua.h"
 #include "network-mysqld-myisam.h"
 #include "network-mysqld-table-lua.h"
 #include "glib-ext.h"
