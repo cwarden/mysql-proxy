@@ -134,7 +134,16 @@ int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filena
 			g_return_val_if_reached(-1);
 		}
 	} else {
-		if (-1 == (binlog->fd = g_open(filename, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR))) {
+		int flags;
+		int perms;
+#ifdef _WIN32
+		perms = _S_IREAD | _S_IWRITE;
+		flags = _O_CREAT | _O_WRONLY | _O_TRUNC | _O_BINARY;
+#else
+		perms = S_IRUSR | S_IWUSR;
+		flags = O_WRONLY | O_TRUNC | O_CREAT;
+#endif
+		if (-1 == (binlog->fd = g_open(filename, flags, perms))) {
 			g_critical("%s: opening '%s' failed: %s",
 					G_STRLOC,
 					filename,
@@ -157,7 +166,11 @@ int network_mysqld_binlog_open(network_mysqld_binlog *binlog, const char *filena
 
 int network_mysqld_binlog_append(network_mysqld_binlog *binlog, network_mysqld_binlog_event *event) {
 	GString *packet, *header;
+#ifdef _WIN32
+	int r; /* write() returns a int on win32 */
+#else
 	ssize_t r;
+#endif
 
 	if (binlog->mode != BINLOG_MODE_WRITE) {
 		g_critical("%s: trying to append to a read-only binlog stream", G_STRLOC);
