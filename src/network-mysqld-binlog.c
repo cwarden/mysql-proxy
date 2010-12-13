@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#elif defined(_WIN32)
+#include <io.h> /* open, read, ... */
 #endif
 
 #include <glib.h>
