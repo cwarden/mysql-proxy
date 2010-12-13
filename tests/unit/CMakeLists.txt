@@ -42,6 +42,7 @@ ADD_EXECUTABLE(check_mysqld_proto
 	../../src/glib-ext.c
 	../../src/network-mysqld-proto.c
 	../../src/network-mysqld-binlog.c
+	../../src/network-mysqld-table.c
 )
 TARGET_LINK_LIBRARIES(check_mysqld_proto
 	${GLIB_LIBRARIES}
