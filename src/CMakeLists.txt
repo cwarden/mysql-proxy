@@ -81,6 +81,7 @@ SET(proxy_sources
 	network-mysqld-table-lua.c 
 	network-mysqld-packet.c 
 	network-mysqld-masterinfo.c 
+	network-mysqld-myisam.c 
 	network-conn-pool.c  
 	network-conn-pool-lua.c  
 	network-queue.c
@@ -221,6 +222,7 @@ INSTALL(FILES
 	network-mysqld-table.h
 	network-mysqld-packet.h
 	network-mysqld-masterinfo.h
+	network-mysqld-myisam.h
 	network-conn-pool.h
 	network-conn-pool-lua.h
 	network-queue.h

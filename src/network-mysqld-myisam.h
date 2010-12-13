@@ -20,11 +20,18 @@
 #ifndef _NETWORK_MYSQLD_MYISAM_H_
 #define _NETWORK_MYSQLD_MYISAM_H_
 
+#ifdef _WIN32
+/* mysql.h needs SOCKET defined */
+#include <winsock2.h>
+#endif
+
 #include <glib.h>
 #include <mysql.h> /* enum field_types */
 
 #include "network-mysqld-proto.h" /* network_packet */
 #include "network-mysqld-table.h" /* network_mysqld_table, network_mysqld_column */
+
+#include "network-exports.h"
 
 /**
  * a field in myisam-packed row
@@ -42,11 +49,11 @@ typedef struct {
 	gboolean is_null;
 } network_mysqld_myisam_field;
 
-network_mysqld_myisam_field *network_mysqld_myisam_field_new();
-void network_mysqld_myisam_field_free(network_mysqld_myisam_field *field);
-int network_mysqld_proto_get_myisam_field(network_packet *packet, network_mysqld_myisam_field *field);
-const char *network_mysqld_myisam_field_get_typestring(enum enum_field_types type);
-int network_mysqld_proto_append_myisam_field(GString *packet, 
+NETWORK_API network_mysqld_myisam_field *network_mysqld_myisam_field_new();
+NETWORK_API void network_mysqld_myisam_field_free(network_mysqld_myisam_field *field);
+NETWORK_API int network_mysqld_proto_get_myisam_field(network_packet *packet, network_mysqld_myisam_field *field);
+NETWORK_API const char *network_mysqld_myisam_field_get_typestring(enum enum_field_types type);
+NETWORK_API int network_mysqld_proto_append_myisam_field(GString *packet, 
 		network_mysqld_myisam_field *field);
 
 /**
@@ -56,12 +63,13 @@ typedef struct {
 	GPtrArray *fields; /**< array of network_mysqld_myisam_field */
 } network_mysqld_myisam_row;
 
-network_mysqld_myisam_row *network_mysqld_myisam_row_new();
-int network_mysqld_myisam_row_init(network_mysqld_myisam_row *row,
+NETWORK_API network_mysqld_myisam_row *network_mysqld_myisam_row_new();
+NETWORK_API int network_mysqld_myisam_row_init(network_mysqld_myisam_row *row,
 		network_mysqld_table *table,
 		gchar *null_bits,
 		guint null_bits_len);
-void network_mysqld_myisam_row_free(network_mysqld_myisam_row *row);
-int network_mysqld_proto_get_myisam_row(network_packet *packet, network_mysqld_myisam_row *row);
+NETWORK_API void network_mysqld_myisam_row_free(network_mysqld_myisam_row *row);
+NETWORK_API int network_mysqld_proto_get_myisam_row(network_packet *packet, network_mysqld_myisam_row *row);
 
 #endif
+
