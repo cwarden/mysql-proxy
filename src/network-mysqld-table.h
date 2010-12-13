@@ -27,14 +27,14 @@
 
 typedef MYSQL_FIELD network_mysqld_column;
 
-network_mysqld_column *network_mysqld_column_new();
-void network_mysqld_column_free(network_mysqld_column *column);
-const char *network_mysqld_column_get_typestring(network_mysqld_column *column);
+NETWORK_API network_mysqld_column *network_mysqld_column_new();
+NETWORK_API void network_mysqld_column_free(network_mysqld_column *column);
+NETWORK_API const char *network_mysqld_column_get_typestring(network_mysqld_column *column);
 
 typedef GPtrArray network_mysqld_columns;
 
-network_mysqld_columns *network_mysqld_columns_new();
-void network_mysqld_columns_free(network_mysqld_columns *columns);
+NETWORK_API network_mysqld_columns *network_mysqld_columns_new();
+NETWORK_API void network_mysqld_columns_free(network_mysqld_columns *columns);
 
 typedef struct {
 	guint64 table_id; /* used by RBR */
