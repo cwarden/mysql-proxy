@@ -20,13 +20,21 @@
 /**
  * wrap the network-mysqld-table.h structures
  */
-
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
 
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef _WIN32
+#include <io.h>
+#endif
+#include <stdlib.h>
 #include <errno.h>
 
 #include "network-mysqld-binlog.h"
